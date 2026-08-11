@@ -20,5 +20,6 @@ dependencies = [
     "python-docx>=1.2.0",
     "python-dotenv>=1.2.4",
     "python-multipart>=0.0.32",
+    "tqdm>=4.70.1",
     "uvicorn[standard]>=0.54.0",
 ]
