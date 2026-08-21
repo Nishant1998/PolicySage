@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     openai_api_key: SecretStr = Field(min_length=1)
     tavily_api_key: SecretStr = Field(min_length=1)
     pinecone_api_key: SecretStr = Field(min_length=1)
+    admin_api_key: SecretStr = SecretStr("")
 
     openai_model: str = "gpt-5-nano"
     embedding_model: str = "text-embedding-3-small"
