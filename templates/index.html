@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Understand Indian insurance policies and claims with answers grounded in policy documents and official sources.">
+  <title>{{ app_name }} — Insurance, explained</title>
+  <link rel="icon" type="image/svg+xml" href="{{ url_for('static', path='/favicon.svg') }}">
+  <link rel="stylesheet" href="{{ url_for('static', path='/css/style.css') }}">
+  <script src="{{ url_for('static', path='/js/app.js') }}" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#question">Skip to question</a>
+  <div class="app-shell">
+    <header class="app-header">
+      <a class="brand" href="/" aria-label="{{ app_name }} home">
+        <svg class="brand-mark" viewBox="0 0 40 44" aria-hidden="true">
+          <path d="M20 3 36 9v13c0 10-9 16-16 19C13 38 4 32 4 22V9Z" fill="currentColor"/>
+          <path d="m12 22 5 5 11-12" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span>{{ app_name }}<small>Insurance, explained.</small></span>
+      </a>
+      <div class="header-actions">
+        <span id="serviceStatus" class="connection" role="status">Checking connection…</span>
+        <button id="scopeToggle" class="button secondary mobile-only" type="button" aria-expanded="false" aria-controls="sidebar">Filters</button>
+        <button id="newQuestion" class="button secondary" type="button" aria-label="Start a new question">
+          <span class="desktop-label">New question</span><span class="mobile-label">New</span><span aria-hidden="true">＋</span>
+        </button>
+      </div>
+    </header>
+
+    <aside id="sidebar" class="sidebar" aria-label="Search options">
+      <div>
+        <p class="eyebrow">YOUR SEARCH</p>
+        <h2>Find the right wording.</h2>
+        <p class="sidebar-description">Narrow the search to a policy type or provider, or leave these open.</p>
+      </div>
+      <form id="scopeForm" class="scope-form">
+        <label for="category">Insurance type</label>
+        <select id="category" name="category">
+          <option value="">All insurance types</option>
+          <option value="health">Health insurance</option>
+          <option value="life">Life insurance</option>
+          <option value="motor">Motor insurance</option>
+          <option value="personal_accident">Personal accident</option>
+          <option value="crop">Crop insurance</option>
+          <option value="regulatory">Regulatory guidance</option>
+        </select>
+        <label for="insurer">Provider or authority</label>
+        <select id="insurer" name="insurer">
+          <option value="">All providers</option>
+          <option>Axis Max Life</option>
+          <option>Bajaj General</option>
+          <option>HDFC ERGO</option>
+          <option>HDFC Life</option>
+          <option>LIC</option>
+          <option>New India Assurance</option>
+          <option>SBI General</option>
+          <option>SBI Life</option>
+          <option>Star Health</option>
+          <option>Tata AIA Life</option>
+          <option>Tata AIG</option>
+          <option>IRDAI</option>
+          <option>Council for Insurance Ombudsmen</option>
+          <option>Ministry of Agriculture and Farmers Welfare</option>
+        </select>
+        <details class="policy-filters">
+          <summary>Specific policy <span class="optional">optional</span></summary>
+          <label for="productName">Product name</label>
+          <input id="productName" name="product_name" type="text" placeholder="e.g. Super Star" maxlength="160">
+          <label for="uin">Product UIN</label>
+          <input id="uin" name="uin" type="text" placeholder="Product UIN, if known" maxlength="100">
+          <p class="field-help">Use the exact product name or UIN from the document. A UIN identifies the product, not your personal policy.</p>
+        </details>
+        <label class="checkbox-label" for="allowWeb">
+          <input id="allowWeb" type="checkbox" checked>
+          <span>Search official websites<span class="field-help">When the documents do not provide enough evidence.</span></span>
+        </label>
+        <button id="resetFilters" class="text-button" type="button">Reset filters</button>
+      </form>
+      <div class="sidebar-footer">
+        <div class="how-it-works">
+          <p class="eyebrow">DOCUMENTS FIRST</p>
+          <ol>
+            <li>Find relevant policy wording</li>
+            <li>Check whether it answers the question</li>
+            <li>Explain with source references</li>
+          </ol>
+        </div>
+        <button id="openUpload" class="admin-button" type="button">Add a KB document <span>Admin ↗</span></button>
+      </div>
+    </aside>
+
+    <main class="workspace">
+      <div class="workspace-heading">
+        <h1 class="section-label">POLICY &amp; CLAIMS ASSISTANT</h1>
+        <span class="document-first"><span aria-hidden="true">◈</span> Knowledge base first</span>
+      </div>
+      <div id="conversation" class="conversation">
+        <section id="welcome" class="welcome" aria-labelledby="welcomeTitle">
+          <div class="welcome-label">A little clarity goes a long way.</div>
+          <h2 id="welcomeTitle">Understand the policy.<br><span>Know your next step.</span></h2>
+          <p>Ask about benefits, exclusions, waiting periods or claims. Get a clear explanation, with the documents behind it.</p>
+          <div class="suggestions" aria-label="Example questions">
+            <button class="example" type="button" data-question="What are the waiting periods in Star Health Super Star?">
+              <span class="example-category">HEALTH COVER</span><strong>What are the waiting periods in Super Star?</strong><span class="example-arrow" aria-hidden="true">↗</span>
+            </button>
+            <button class="example" type="button" data-question="What documents does SBI Life require for a death claim?">
+              <span class="example-category">MAKING A CLAIM</span><strong>What documents are needed for an SBI Life claim?</strong><span class="example-arrow" aria-hidden="true">↗</span>
+            </button>
+            <button class="example" type="button" data-question="What does IRDAI say about health insurance claim settlement timelines?">
+              <span class="example-category">REGULATORY GUIDANCE</span><strong>How long should a health claim settlement take?</strong><span class="example-arrow" aria-hidden="true">↗</span>
+            </button>
+          </div>
+          <div class="welcome-note"><span aria-hidden="true">↳</span> Start with a question, or use the filters to focus your search.</div>
+        </section>
+        <div id="messages" class="messages" role="log" aria-label="Questions and answers" aria-live="polite" aria-relevant="additions text"></div>
+      </div>
+      <div class="composer-area">
+        <p id="requestStatus" class="request-status" role="status"></p>
+        <form id="chatForm" class="composer">
+          <label class="visually-hidden" for="question">Your insurance question</label>
+          <textarea id="question" rows="2" minlength="2" maxlength="3000" placeholder="Ask about a policy, a term, or the claims process…" required aria-describedby="composerHint"></textarea>
+          <div class="composer-bottom">
+            <span id="characterCount" class="character-count" aria-hidden="true">0 / 3000</span>
+            <button id="sendButton" class="button primary" type="submit">Ask PolicySage <span aria-hidden="true">↑</span></button>
+          </div>
+        </form>
+        <p id="composerHint" class="composer-hint">Each question starts a fresh search. Enter to send · Shift + Enter for a new line.</p>
+        <p class="coverage-note">Check the applicable policy wording with your insurer. An explanation does not confirm personal coverage or claim approval.</p>
+      </div>
+    </main>
+  </div>
+
+  <dialog id="uploadDialog" class="upload-dialog" aria-labelledby="uploadTitle" aria-describedby="uploadDescription">
+    <div class="dialog-heading"><p class="eyebrow">KNOWLEDGE BASE</p><button id="closeUpload" class="icon-button" type="button" aria-label="Close upload dialog">×</button></div>
+    <h2 id="uploadTitle">Add a reference document</h2>
+    <p id="uploadDescription">Admin uploads become part of the shared knowledge base. Use public reference documents.</p>
+    <form id="uploadForm">
+      <label for="adminKey">Admin key</label>
+      <input id="adminKey" type="password" autocomplete="off" spellcheck="false" required>
+      <label for="fileInput">Document</label>
+      <input id="fileInput" type="file" accept=".pdf,.docx,.txt,.md" required>
+      <p class="field-help">PDF, DOCX, TXT or Markdown · Up to 20 MB. PDFs must contain readable text.</p>
+      <button id="uploadButton" class="button primary full-width" type="submit">Index document <span aria-hidden="true">↑</span></button>
+      <p id="uploadStatus" class="upload-status" role="status" aria-live="polite"></p>
+    </form>
+  </dialog>
+</body>
+</html>
