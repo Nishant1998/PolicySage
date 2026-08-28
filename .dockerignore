@@ -1,9 +1,14 @@
 .git
 .venv
+.idea
+.ruff_cache
+.pytest_cache
+.codebase-memory
 __pycache__
 *.py[cod]
 .env
 .env.*
 !.env.example
 uploads/
-data/*.db
+data/*.db*
+data/kb/
