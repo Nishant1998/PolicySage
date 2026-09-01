@@ -140,3 +140,4 @@ __marimo__/
 /data/*.db
 /data/**/*.pdf
 /data/kb/
+/tests/
