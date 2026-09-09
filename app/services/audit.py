@@ -1,5 +1,6 @@
 import json
 import sqlite3
+from hashlib import sha256
 from contextlib import closing
 from datetime import datetime, timezone
 
@@ -28,7 +29,7 @@ def write_audit(question: str, source_used: str, trace: list[str]) -> None:
             "INSERT INTO query_audit(created_at, question, source_used, trace_json) VALUES (?, ?, ?, ?)",
             (
                 datetime.now(timezone.utc).isoformat(),
-                question,
+                "sha256:" + sha256(question.encode()).hexdigest(),
                 source_used,
                 json.dumps(trace, ensure_ascii=False),
             ),

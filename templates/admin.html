@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Knowledge base · {{ app_name }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', path='/css/style.css') }}">
+  <script src="{{ url_for('static', path='/js/kb_admin.js') }}" defer></script>
+</head>
+<body>
+  <header><a class="brand" href="/"><span class="mark" aria-hidden="true">✧</span>{{ app_name }}</a>
+    <a href="/">Back to chat</a></header>
+  <main class="kb-admin">
+    <h1>Knowledge base</h1>
+    <form id="loginForm" class="kb-form">
+      <label>Username <input name="username" autocomplete="username" required></label>
+      <label>Password <input name="password" type="password" autocomplete="current-password" required></label>
+      <button type="submit">Sign in</button>
+    </form>
+    <p id="adminStatus" role="status" aria-live="polite"></p>
+    <div id="adminPanel" hidden>
+      <div class="kb-actions">
+        <button id="refresh" type="button">Refresh</button>
+        <button id="signOut" type="button">Sign out</button>
+      </div>
+      <section class="kb-section" aria-labelledby="uploadTitle">
+        <h2 id="uploadTitle">Add a PDF</h2>
+        <p>Upload only documents approved for the public knowledge base. A worker must be running to process queued PDFs.</p>
+        <form id="documentForm" class="kb-form">
+          <label>PDF file <input name="file" type="file" accept=".pdf,application/pdf" required></label>
+          <label>Title (optional) <input name="title" maxlength="200"></label>
+          <label>Official source URL (optional) <input name="source_url" type="url" placeholder="https://" maxlength="2048"></label>
+          <details>
+            <summary>Policy filters (optional)</summary>
+            <label>Insurer <input name="insurer" maxlength="200"></label>
+            <label>Category <input name="category" maxlength="100"></label>
+            <label>Product name <input name="product_name" maxlength="200"></label>
+            <label>Document type <input name="document_type" maxlength="100"></label>
+            <label>UINs (separate with semicolons) <input name="uin" maxlength="1000"></label>
+          </details>
+          <label><input name="review_required" type="checkbox" value="true"> Require review before publishing</label>
+          <div class="kb-actions">
+            <button type="submit">Queue PDF</button>
+            <button id="cancelReplace" type="button" hidden>Cancel replacement</button>
+          </div>
+        </form>
+      </section>
+      <section class="kb-section" aria-labelledby="documentsTitle">
+        <h2 id="documentsTitle">Documents</h2>
+        <label>Find a document <input id="findDocument" type="search" placeholder="Title or filename"></label>
+        <div id="documentList" class="kb-list"></div>
+      </section>
+      <section class="kb-section" aria-labelledby="jobsTitle">
+        <h2 id="jobsTitle">Ingestion activity</h2>
+        <div id="jobList" class="kb-list"></div>
+      </section>
+    </div>
+  </main>
+</body>
+</html>

@@ -9,12 +9,15 @@ ENV PORT=8080
 ENV PATH="/app/.venv/bin:$PATH"
 
 COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-dev --no-install-project --no-cache
+RUN uv sync --locked --no-dev --no-install-project --no-cache
 
 COPY app ./app
 COPY templates ./templates
 COPY static ./static
 
+RUN useradd --create-home appuser && mkdir -p /app/data && chown -R appuser:appuser /app
+USER appuser
+
 EXPOSE 8080
 
-CMD ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8080}"]
+CMD ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8080} --workers 1"]
