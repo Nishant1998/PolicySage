@@ -43,6 +43,11 @@ def current_revisions():
     return active_revisions() if load_snapshot is None else load_snapshot()
 
 
+def loaded_revisions():
+    load_snapshot = _snapshot.get()
+    return load_snapshot() if load_snapshot is not None and load_snapshot.cache_info().currsize else None
+
+
 def document_for_source(conn, source):
     return conn.execute('SELECT document_id FROM documents WHERE source_path=%s LIMIT 1', (source,)).fetchone()
 
@@ -151,6 +156,15 @@ def claim_job(conn):
     ).fetchone()
 
 
+def next_cleanup_delay(conn):
+    row = conn.execute(
+        """SELECT GREATEST(0, EXTRACT(EPOCH FROM
+                   (MIN(updated_at) + interval '6 minutes' - now()))) AS seconds
+           FROM documents WHERE status='cleanup_pending'"""
+    ).fetchone()
+    return float(row["seconds"]) if row["seconds"] is not None else None
+
+
 def archive_revision(conn, revision_id):
     conn.execute(
         """UPDATE documents SET status='archived', updated_at=now()
@@ -202,7 +216,9 @@ def list_documents():
         return conn.execute(
             """SELECT latest.document_id AS id, latest.name AS title, latest.source_path AS source,
                        latest.source_url, latest.status AS index_status, latest.withdrawn_at,
-                       latest.updated_at, latest.filename, latest.review_required, active.id AS active_revision
+                       latest.updated_at, latest.filename, latest.review_required, latest.insurer,
+                       latest.category, latest.document_type, latest.version, latest.id AS latest_revision,
+                       active.id AS active_revision
                 FROM (SELECT DISTINCT ON (document_id) * FROM documents
                       ORDER BY document_id, created_at DESC, id DESC) latest
                 LEFT JOIN documents active

@@ -75,6 +75,8 @@ class AgentState(TypedDict):
     needs_details: bool
     retry_count: int
     allow_web: bool
+    web_disabled_reason: str
+    next_evidence_step: str
     web_unavailable: bool
     answer: str
     status: Literal["answered", "clarification_required", "insufficient_evidence", "error"]

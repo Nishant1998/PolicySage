@@ -6,6 +6,7 @@ from app.core.observability import traced_operation
 from app.db import document_repository as repository
 from app.db.connection import connect, lock_document
 from app.infrastructure.object_storage import upload_pdf
+from app.ingestion.wakeup import signal_worker
 
 MAX_PDF_BYTES = 20 * 1024 * 1024
 
@@ -24,7 +25,8 @@ def object_key_for_pdf(filename, document_id, version, *, source=None, category=
 
 
 @traced_operation("register_pdf")
-def register_document(content, filename, metadata, *, source=None, document_id=None, hold=False):
+def register_document(content, filename, metadata, *, source=None, document_id=None, hold=False,
+                      repair_revision=None):
     if not content.startswith(b"%PDF-") or len(content) > MAX_PDF_BYTES:
         raise ValueError("Upload a PDF no larger than 20 MB.")
     filename = PurePosixPath(filename.replace("\\", "/")).name
@@ -49,6 +51,10 @@ def register_document(content, filename, metadata, *, source=None, document_id=N
             document_id = conn.execute("SELECT nextval('documents_document_id_seq') AS id").fetchone()["id"]
         lock_document(conn, document_id)
         previous = repository.latest_revision(conn, document_id)
+        if repair_revision is not None and (
+            not previous or previous["id"] != repair_revision or previous["status"] != "active"
+        ):
+            raise ValueError("The published revision changed during inspection; run the command again.")
         if replacing and not previous:
             raise ValueError("Document not found.")
         if previous and previous["withdrawn_at"]:
@@ -61,7 +67,7 @@ def register_document(content, filename, metadata, *, source=None, document_id=N
             conn.execute("UPDATE documents SET last_error='Upload failed; register the PDF again' WHERE id=%s",
                          (previous["id"],))
             previous["last_error"] = "Upload failed; register the PDF again"
-        if (previous and previous["sha256"] == digest and previous["status"] != "archived"
+        if (repair_revision is None and previous and previous["sha256"] == digest and previous["status"] != "archived"
                 and not (previous["last_error"] or "").startswith("Upload failed")):
             return {"document_id": document_id, "revision_id": previous["id"], "status": "unchanged"}
         if hold and previous and previous["status"] in ("verifying", "failed"):
@@ -72,6 +78,8 @@ def register_document(content, filename, metadata, *, source=None, document_id=N
         name = metadata.get("document_title") or (previous and previous["name"]) or filename
         values = {field: (previous or {}).get(field) for field in repository.CATALOGUE_FIELDS}
         values.update({field: metadata[field] for field in repository.CATALOGUE_FIELDS if metadata.get(field)})
+        if metadata.get("clear_source_url") and not metadata.get("source_url"):
+            values["source_url"] = None
         parts = PurePosixPath(source or "").parts
         if len(parts) >= 3:
             values["category"] = values["category"] or parts[0]
@@ -104,6 +112,8 @@ def register_document(content, filename, metadata, *, source=None, document_id=N
             repository.retire_pending(conn, previous["id"])
         conn.execute("UPDATE documents SET status=%s, last_error=NULL, updated_at=now() WHERE id=%s",
                      (status, revision_id))
+    if status == "queued":
+        signal_worker()
     return {"document_id": document_id, "revision_id": revision_id, "status": status}
 
 
@@ -112,3 +122,4 @@ def withdraw(document_id):
         lock_document(conn, document_id)
         if not repository.mark_withdrawn(conn, document_id) and not repository.document_exists(conn, document_id):
             raise ValueError("Document not found.")
+    signal_worker()

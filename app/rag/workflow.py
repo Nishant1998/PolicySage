@@ -129,7 +129,8 @@ def route_question(state: AgentState):
         ]
     )
     route = "direct" if decision.needs_details else decision.route
-    trace_details(decision_reason="requires clarification" if decision.needs_details else
+    trace_details(web_search_decision="policy research required" if route == "kb" else "direct reply or clarification",
+                  decision_reason="requires clarification" if decision.needs_details else
                   "search policy evidence" if route == "kb" else "direct response")
     if token_count(decision.standalone_question) > get_settings().max_question_tokens:
         raise TokenBudgetExceeded()
@@ -265,21 +266,35 @@ def grade_kb(state: AgentState):
         for doc in state["kb_docs"]
         if doc.metadata["evidence_id"] in grade.supporting_evidence_ids
     ]
-    return {
+    return evidence_transition(state, {
         "kb_docs": docs,
         "needs_details": grade.needs_details,
         "kb_grade": grade.grade,
         "missing_aspects": grade.missing_aspects[:3],
         "trace": add_trace(state, f"KB grade: {grade.grade}"),
-    }
+    }, after_kb)
+
+
+def evidence_transition(state, update, decide):
+    next_step, reason = decide({**state, **update})
+    trace_details(next_step=next_step, web_search_decision=reason,
+                  web_search_allowed=state["allow_web"], retry_count=state["retry_count"])
+    update["next_evidence_step"] = next_step
+    update["trace"] = [*update["trace"], reason]
+    return update
 
 
 def after_kb(state: AgentState):
     if state["needs_details"]:
-        return "general_answer"
+        return "general_answer", "Web search skipped: essential user details missing"
     if state["kb_grade"] == "good":
-        return "generate_from_kb"
-    return "search_web" if state["allow_web"] and research_budget_available() else "general_answer"
+        return "generate_from_kb", "Web search skipped: policy evidence is sufficient"
+    if not state["allow_web"]:
+        return "general_answer", f"Web search skipped: {state['web_disabled_reason']}"
+    # The first search needs no LLM tokens. Budget checks still apply to grading and retries.
+    if state["retry_count"] and not research_budget_available():
+        return "general_answer", "Web search stopped: research token budget exhausted"
+    return "search_web", "Web search selected: policy evidence is insufficient"
 
 
 def search_web(state: AgentState):
@@ -322,6 +337,7 @@ def search_web(state: AgentState):
             "trace": add_trace(state, f"Web search: {len(documents)} sources"),
         }
     except Exception as exc:
+        trace_details(web_error_type=type(exc).__name__, provider_status=getattr(exc, "code", None))
         logger.warning("Web search failed (%s)", type(exc).__name__)
         return {
             "web_results": [],
@@ -334,12 +350,12 @@ def search_web(state: AgentState):
 def grade_web(state: AgentState):
     # Relevant KB passages may complete an answer that web evidence alone cannot.
     if not state["web_results"]:
-        return {
+        return evidence_transition(state, {
             "web_grade": "weak",
             "trace": add_trace(state, "Web and KB grade: weak"),
-        }
+        }, after_web)
     grade = grade_evidence(state, [*state["kb_docs"], *state["web_results"]])
-    return {
+    return evidence_transition(state, {
         "kb_docs": [
             doc
             for doc in state["kb_docs"]
@@ -354,17 +370,21 @@ def grade_web(state: AgentState):
         "needs_details": grade.needs_details,
         "missing_aspects": grade.missing_aspects[:3],
         "trace": add_trace(state, f"Web and KB grade: {grade.grade}"),
-    }
+    }, after_web)
 
 
 def after_web(state: AgentState):
     if state["needs_details"]:
-        return "general_answer"
+        return "general_answer", "Web research stopped: essential user details missing"
     if state["web_grade"] == "good":
-        return "generate_from_web"
-    if not state["web_unavailable"] and state["retry_count"] < get_settings().max_retries and research_budget_available():
-        return "rewrite_query"
-    return "general_answer"
+        return "generate_from_web", "Web research complete: supporting evidence found"
+    if state["web_unavailable"]:
+        return "general_answer", "Web research stopped: search unavailable"
+    if state["retry_count"] >= get_settings().max_retries:
+        return "general_answer", "Web research stopped: retry limit reached"
+    if not research_budget_available():
+        return "general_answer", "Web research stopped: research token budget exhausted"
+    return "rewrite_query", "Web research retry: evidence is still insufficient"
 
 
 def rewrite_query(state: AgentState):
@@ -542,11 +562,11 @@ def build_graph():
     graph.add_edge("decompose_question", "retrieve_kb")
     graph.add_edge("retrieve_kb", "grade_kb")
     graph.add_conditional_edges(
-        "grade_kb", after_kb, ["generate_from_kb", "search_web", "general_answer"]
+        "grade_kb", lambda state: state["next_evidence_step"], ["generate_from_kb", "search_web", "general_answer"]
     )
     graph.add_edge("search_web", "grade_web")
     graph.add_conditional_edges(
-        "grade_web", after_web, ["generate_from_web", "rewrite_query", "general_answer"]
+        "grade_web", lambda state: state["next_evidence_step"], ["generate_from_web", "rewrite_query", "general_answer"]
     )
     graph.add_edge("rewrite_query", "retrieve_kb")
     graph.add_edge("generate_from_kb", END)
@@ -557,7 +577,8 @@ def build_graph():
 
 @token_limited
 def ask(question: str, *, filters: dict | None = None, allow_web: bool = True,
-        history: list[dict] | None = None, on_step=None):
+        history: list[dict] | None = None, on_step=None, on_stage=None):
+    web_enabled = getattr(get_settings(), "web_search_enabled", True)
     initial: AgentState = {
         "original_question": question,
         "history": [],
@@ -577,7 +598,8 @@ def ask(question: str, *, filters: dict | None = None, allow_web: bool = True,
         "missing_aspects": [],
         "needs_details": False,
         "retry_count": 0,
-        "allow_web": allow_web and getattr(get_settings(), "web_search_enabled", True),
+        "allow_web": allow_web and web_enabled,
+        "web_disabled_reason": "disabled by the request" if not allow_web else "disabled in server settings",
         "web_unavailable": False,
         "answer": "",
         "status": "insufficient_evidence",
@@ -605,8 +627,17 @@ def ask(question: str, *, filters: dict | None = None, allow_web: bool = True,
         stage = "graph startup"
         step_started = monotonic()
         for update in build_graph().stream(
-            initial, config={"recursion_limit": 40}, stream_mode="updates"
+            initial, config={"recursion_limit": 40},
+            stream_mode=["tasks", "updates"] if on_stage else "updates",
         ):
+            if on_stage:
+                mode, update = update
+                if mode == "tasks":
+                    if "input" in update:
+                        node = update["name"]
+                        if node != "decompose_question" or update["input"].get("decompose"):
+                            on_stage(node)
+                    continue
             for node, values in update.items():
                 remaining_timeout()
                 initial.update(values)

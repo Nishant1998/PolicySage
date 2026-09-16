@@ -2,9 +2,8 @@ from contextlib import asynccontextmanager
 from asyncio import to_thread
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
 
 from app.api import admin_documents, chat, document_sources, health
 from app.core.config import BASE_DIR, get_settings
@@ -31,11 +30,12 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="PolicySage", version=APP_VERSION, lifespan=lifespan)
+FRONTEND_BUILD = BASE_DIR / "frontend" / "build"
 app.add_middleware(RequestBodyLimit)
 for api in (health, chat, admin_documents, document_sources):
     app.include_router(api.router)
-app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
-templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
+if (FRONTEND_BUILD / "static").is_dir():
+    app.mount("/static", StaticFiles(directory=FRONTEND_BUILD / "static"), name="static")
 
 
 @app.middleware("http")
@@ -83,19 +83,25 @@ async def observe_http_request(request: Request, call_next):
         return response
 
 
-@app.get("/", response_class=HTMLResponse)
-def home(request: Request):
-    return templates.TemplateResponse(
-        request=request,
-        name="index.html",
-        context={"app_name": get_settings().app_name, "kb_managed": get_settings().kb_managed},
-    )
+@app.get("/", include_in_schema=False)
+@app.get("/about", include_in_schema=False)
+def frontend_page():
+    index = FRONTEND_BUILD / "index.html"
+    if not index.is_file():
+        raise HTTPException(503, "Build the frontend with yarn build and restart FastAPI.")
+    return FileResponse(index)
 
 
-@app.get("/admin", response_class=HTMLResponse, include_in_schema=False)
-def admin_page(request: Request):
+@app.get("/admin", include_in_schema=False)
+def admin_page():
     if not get_settings().kb_managed:
         raise HTTPException(404)
-    return templates.TemplateResponse(
-        request=request, name="admin.html", context={"app_name": get_settings().app_name},
-    )
+    return frontend_page()
+
+
+@app.get("/{asset_path:path}", include_in_schema=False)
+def frontend_asset(asset_path: str):
+    asset = (FRONTEND_BUILD / asset_path).resolve()
+    if not asset.is_relative_to(FRONTEND_BUILD.resolve()) or not asset.is_file():
+        raise HTTPException(404)
+    return FileResponse(asset)

@@ -1,13 +1,18 @@
+import asyncio
+import json
 import logging
 from uuid import UUID
 
+import anyio
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.budget import request_budget
 from app.core.config import get_settings
-from app.core.observability import current_request, start_request_trace, trace_content
+from app.core.observability import current_request, observe_request, start_request_trace, trace_content
 from app.db.document_repository import retrieval_snapshot
+from app.rag.answer_cache import get_answer
 from app.rag.state import ChatTurn, PolicyFilters
 from app.rag.workflow import ask
 from app.services.audit import write_audit
@@ -42,7 +47,49 @@ def chat_access(request: Request):
 
 @router.post("/chat", dependencies=[Depends(chat_access)])
 def chat(payload: ChatRequest, request: Request = None, response: Response = None):
-    settings = get_settings()
+    if request is not None:
+        accepted = request.headers.get("accept", "").split(",")
+        if any(value.strip() == "text/event-stream" for value in accepted):
+            return stream_chat(payload, request)
+    return answer_chat(payload, request)
+
+
+def stream_chat(payload, request):
+    async def events():
+        loop = asyncio.get_running_loop()
+        queue = asyncio.Queue()
+
+        def emit(event, **data):
+            loop.call_soon_threadsafe(queue.put_nowait, (event, data))
+
+        def run():
+            try:
+                with observe_request("/api/chat", "POST", export=False):
+                    result = answer_chat(payload, request, on_stage=lambda stage: emit("stage", stage=stage))
+                emit("final", result=result)
+            except HTTPException as exc:
+                emit("error", message=exc.detail)
+            except Exception:
+                logger.exception("Chat stream failed")
+                emit("error", message="Could not process the question. Please try again.")
+
+        async with anyio.create_task_group() as group:
+            group.start_soon(anyio.to_thread.run_sync, run)
+            while True:
+                with anyio.move_on_after(10) as timeout:
+                    event, data = await queue.get()
+                if timeout.cancel_called:
+                    yield ": keep-alive\n\n"
+                    continue
+                yield f"event: {event}\ndata: {json.dumps(data)}\n\n"
+                if event in {"final", "error"}:
+                    break
+
+    return StreamingResponse(events(), media_type="text/event-stream",
+                             headers={"X-Accel-Buffering": "no", "Vary": "Accept"})
+
+
+def answer_chat(payload, request, *, on_stage=None):
     conversation_id = None
     if request is not None:
         try:
@@ -60,7 +107,12 @@ def chat(payload: ChatRequest, request: Request = None, response: Response = Non
         history = [turn.model_dump() for turn in payload.history]
         with request_budget():
             with retrieval_snapshot():
-                result = ask(payload.question, filters=filters, allow_web=payload.allow_web, history=history)
+                options = {"on_stage": on_stage} if on_stage is not None else {}
+                result = get_answer(
+                    payload.question, filters=filters, allow_web=payload.allow_web, history=history,
+                    generate=lambda: ask(payload.question, filters=filters, allow_web=payload.allow_web,
+                                         history=history, **options),
+                )
     except Exception as exc:
         logger.warning("Chat request failed (%s)", type(exc).__name__)
         raise HTTPException(

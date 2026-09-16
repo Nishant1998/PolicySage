@@ -10,7 +10,7 @@ from app.db import document_repository as repository
 from app.db.connection import connect
 from app.db.schema import initialize
 from app.ingestion.bootstrap import bootstrap, queue_staged
-from app.ingestion.worker import WORKER_LOCK, drain
+from app.ingestion.worker import WORKER_LOCK, drain, watch_worker
 
 logger = logging.getLogger(__name__)
 
@@ -22,15 +22,15 @@ def main(argv=None):
     parser.add_argument("--stage-only", action="store_true", help="Register new bootstrap PDFs without queueing.")
     parser.add_argument("--watch", action="store_true", help="Keep processing newly queued jobs.")
     parser.add_argument("--source", action="append",
-                        help="Relative KB path confirmed missing from Qdrant. Repeat to index several PDFs.")
+                        help="Relative KB path to process. Repeat to select multiple PDFs.")
     args = parser.parse_args(argv)
     if args.command is None:
         parser.print_help()
         return
     if args.command == "index-staged" and not args.source:
         parser.error("index-staged requires at least one --source confirmed missing from Qdrant.")
-    if args.source and args.command != "index-staged":
-        parser.error("--source is only valid with index-staged.")
+    if args.source and args.command not in ("index-staged", "bootstrap"):
+        parser.error("--source is only valid with bootstrap or index-staged.")
     if args.watch and args.command not in ("worker", "index-staged"):
         parser.error("--watch requires worker or index-staged.")
     if args.stage_only and args.command != "bootstrap":
@@ -44,7 +44,12 @@ def main(argv=None):
             return
         # The source and document locks in registration also protect a live worker.
         with logging_redirect_tqdm(), observe_request("kb_bulk", "WORKER"):
-            bootstrap(stage_only=args.stage_only)
+            bootstrap(stage_only=args.stage_only, sources=args.source)
+        return
+
+    if args.command == "worker" and args.watch:
+        with logging_redirect_tqdm():
+            watch_worker()
         return
 
     with connect(autocommit=True) as conn, logging_redirect_tqdm():
@@ -53,9 +58,12 @@ def main(argv=None):
         if args.command == "index-staged":
             queue_staged(conn, args.source)
         repository.recover_interrupted_jobs(conn)
-        failed = drain(conn, args.watch)
+        failed = drain(conn, watch=False)
         if failed or repository.has_failed_jobs(conn):
             raise SystemExit("Some jobs failed. Review and retry them in the admin panel.")
+    if args.watch:
+        with logging_redirect_tqdm():
+            watch_worker()
 
 
 def run():

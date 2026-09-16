@@ -1,3 +1,11 @@
+FROM node:22-slim AS frontend-build
+WORKDIR /frontend
+RUN corepack enable
+COPY frontend/package.json frontend/yarn.lock ./
+RUN yarn install --frozen-lockfile --network-timeout 600000
+COPY frontend ./
+RUN yarn build
+
 FROM python:3.11-slim
 COPY --from=ghcr.io/astral-sh/uv:0.13.5 /uv /uvx /usr/local/bin/
 
@@ -12,8 +20,7 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --locked --no-dev --no-install-project --no-cache
 
 COPY app ./app
-COPY templates ./templates
-COPY static ./static
+COPY --from=frontend-build /frontend/build ./frontend/build
 
 RUN useradd --create-home appuser && mkdir -p /app/data && chown -R appuser:appuser /app
 USER appuser

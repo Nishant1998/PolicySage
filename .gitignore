@@ -6,6 +6,8 @@ __pycache__/
 
 .Python
 build/
+frontend/node_modules/
+frontend/build/
 develop-eggs/
 dist/
 downloads/
@@ -171,3 +173,4 @@ __marimo__/
 /run.py
 /PolicySage_Manual_Test_Questions.md
 /.codebase-memory/
+!/frontend/src/lib/

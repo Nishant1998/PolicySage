@@ -11,6 +11,7 @@ from app.core.observability import traced_operation
 from app.db import document_repository as repository
 from app.services.document_service import MAX_PDF_BYTES, register_document, withdraw
 from app.services.limits import request_slot, reserve_request
+from app.ingestion.wakeup import signal_worker
 
 
 logger = logging.getLogger(__name__)
@@ -86,6 +87,7 @@ def upload_metadata(
     document_type: str = Form(default="", max_length=100),
     uin: str = Form(default="", max_length=1000),
     review_required: bool = Form(default=False),
+    clear_source_url: bool = Form(default=False),
 ):
     return {
         "document_title": title.strip(),
@@ -96,6 +98,7 @@ def upload_metadata(
         "document_type": document_type.strip(),
         "uin": [value.strip() for value in uin.split(";") if value.strip()],
         "review_required": review_required,
+        "clear_source_url": clear_source_url,
     }
 
 
@@ -118,6 +121,7 @@ def approve_revision(revision_id: int):
     approved = repository.approve_revision(revision_id)
     if not approved:
         raise HTTPException(409, "This revision is not waiting for review.")
+    signal_worker()
     return {"status": "approved"}
 
 
@@ -140,4 +144,5 @@ def retry_job(job_id: int):
     job = repository.retry_job(job_id)
     if not job:
         raise HTTPException(409, "Only failed jobs can be retried.")
+    signal_worker()
     return {"status": "queued"}

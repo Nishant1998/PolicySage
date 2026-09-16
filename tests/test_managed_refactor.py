@@ -293,7 +293,7 @@ class HttpContractTests(unittest.TestCase):
             register.assert_called_once()
             self.assertEqual(register.call_args.args[:2], (PDF, "policy.pdf"))
 
-        url = f"/api/kb/revisions/{REVISION_ID}.pdf"
+        url = "/api/kb/revisions/1.pdf"
         with patch.object(document_sources, "get_settings", return_value=settings), \
              patch.object(document_sources, "reserve_request"), \
              patch.object(document_sources.repository, "published_object", return_value={"object_key": "pdf-key"}) as lookup, \
