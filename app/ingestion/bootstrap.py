@@ -130,7 +130,7 @@ def bootstrap(*, stage_only=False, sources=None):
         except Exception as exc:
             failures.append(source)
             error = str(exc) if isinstance(exc, ValueError) else type(exc).__name__
-            logger.error("Could not register %s (%s)", source, error)
+            logger.error("Could not register %s (%s)", source, type(exc).__name__)
     logger.info("Bootstrap: %d queued, %d staged, %d unchanged, %d withdrawn, %d failed",
                 counts["queued"], counts["staged"], counts["unchanged"], counts["withdrawn"], len(failures))
     if failures:

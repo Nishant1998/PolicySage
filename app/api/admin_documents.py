@@ -32,6 +32,7 @@ def require_admin(request: Request, credentials: HTTPBasicCredentials | None = D
     username_ok = credentials and compare_digest(credentials.username.encode(), settings.kb_admin_username.encode())
     password_ok = credentials and compare_digest(credentials.password.encode(), password.encode())
     if not (username_ok and password_ok):
+        logger.warning("Admin authentication failed")
         reserve_request(request, "kb-admin-login")
         raise HTTPException(401, "Invalid username or password.")
 

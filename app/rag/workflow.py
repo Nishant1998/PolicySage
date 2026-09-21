@@ -642,7 +642,7 @@ def ask(question: str, *, filters: dict | None = None, allow_web: bool = True,
                 remaining_timeout()
                 initial.update(values)
                 stage = node
-                logger.info("RAG step completed: %s (%.2fs)", node, monotonic() - step_started)
+                logger.debug("RAG step completed: %s (%.2fs)", node, monotonic() - step_started)
                 step_started = monotonic()
                 if on_step is not None:
                     on_step(node, initial)

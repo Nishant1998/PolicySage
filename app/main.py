@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+import logging
 from asyncio import to_thread
 
 from fastapi import FastAPI, HTTPException, Request
@@ -18,15 +19,18 @@ from app.rag.retrieval import reranker
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
-    configure_logging(settings.log_level)
+    configure_logging(settings.log_level, structured=settings.app_env == "production")
     try:
         init_db()
     except Exception:
-        import logging
         logging.getLogger(__name__).exception("Audit storage unavailable")
     init_usage()
     await to_thread(reranker)
-    yield
+    logging.getLogger(__name__).info("Application started")
+    try:
+        yield
+    finally:
+        logging.getLogger(__name__).info("Application stopped")
 
 
 app = FastAPI(title="PolicySage", version=APP_VERSION, lifespan=lifespan)
@@ -57,30 +61,51 @@ async def limit_request_size(request: Request, call_next):
     return response
 
 
-@app.middleware("http")
-async def observe_http_request(request: Request, call_next):
-    path = request.url.path if request.url.path in {"/api/chat", "/api/health", "/"} else "other"
-    if request.url.path.startswith("/api/admin/kb/"):
-        path = "/api/admin/kb"
-    elif request.url.path.startswith("/api/kb/revisions/"):
-        path = "/api/kb/revisions"
-    with observe_request(path, request.method, export=False) as observation:
-        response = await call_next(request)
-        observation["http_status"] = response.status_code
-        if response.status_code >= 500:
-            observation["error_type"] = "RequestFailed"
-            observation["cost_complete"] = False
-        response.headers["X-Request-ID"] = observation["id"]
-        response.headers["X-Content-Type-Options"] = "nosniff"
-        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-        response.headers["X-Frame-Options"] = "DENY"
-        response.headers["Cache-Control"] = "no-store"
-        response.headers["Content-Security-Policy"] = (
-            "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
-            "img-src 'self' data:; connect-src 'self'; object-src 'none'; "
-            "base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
-        )
-        return response
+class RequestObservation:
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        path = scope["path"]
+        routine = path.startswith("/static/") or path in {"/favicon.svg", "/favicon.ico", "/api/health"}
+        safe_path = path if path in {"/api/chat", "/api/health", "/", "/about", "/admin"} else "other"
+        if path.startswith("/api/admin/kb/"):
+            safe_path = "/api/admin/kb"
+        elif path.startswith("/api/kb/revisions/"):
+            safe_path = "/api/kb/revisions"
+        with observe_request(safe_path, scope["method"], export=False) as observation:
+            observation["_routine"] = routine
+
+            async def observed_receive():
+                message = await receive()
+                if message["type"] == "http.disconnect":
+                    observation["error_type"] = "ClientDisconnected"
+                return message
+
+            async def observed_send(message):
+                if message["type"] == "http.response.start":
+                    observation["http_status"] = message["status"]
+                    if message["status"] >= 500:
+                        observation["error_type"] = "RequestFailed"
+                    headers = list(message.get("headers", []))
+                    headers.extend([
+                        (b"x-request-id", observation["id"].encode("ascii")),
+                        (b"x-content-type-options", b"nosniff"),
+                        (b"referrer-policy", b"strict-origin-when-cross-origin"),
+                        (b"x-frame-options", b"DENY"),
+                        (b"cache-control", b"no-store"),
+                        (b"content-security-policy", b"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"),
+                    ])
+                    message = {**message, "headers": headers}
+                await send(message)
+
+            await self.app(scope, observed_receive, observed_send)
+
+
+app.add_middleware(RequestObservation)
 
 
 @app.get("/", include_in_schema=False)

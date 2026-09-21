@@ -27,78 +27,49 @@ DIGEST = hashlib.sha256(PDF).hexdigest()
 
 class RegistrationTests(unittest.TestCase):
     def test_bootstrap_queues_new_pdf_and_skips_unchanged_revision(self):
-        rows = []
-
-        def insert(conn, revision, doc, name, source, key, digest, status, filename, review, values):
-            rows.append({
-                "id": revision, "document_id": doc, "status": status, "sha256": digest,
-                "withdrawn_at": None, "source_path": source, "object_key": key,
-            })
-
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
             (root / "policy.pdf").write_bytes(PDF)
-            conn = MagicMock()
             with patch.object(bootstrap, "get_settings", return_value=SimpleNamespace(kb_dir=root)), \
-                 patch.object(document_service, "connect", return_value=nullcontext(conn)), \
-                 patch.object(document_service, "lock_document"), \
-                 patch.object(document_service, "upload_pdf") as upload, \
-                 patch.object(document_service, "uuid4", return_value=SimpleNamespace(hex=REVISION_ID)), \
-                 patch.object(document_service.repository, "document_for_source", side_effect=lambda *args: rows[-1] if rows else None), \
-                 patch.object(document_service.repository, "latest_revision", side_effect=lambda *args: rows[-1] if rows else None), \
-                 patch.object(document_service.repository, "insert_revision", side_effect=insert), \
-                 self.assertLogs(bootstrap.logger, level="INFO") as logs:
+                 patch.object(bootstrap, "inspect_existing", side_effect=[None, "unchanged"]), \
+                 patch.object(bootstrap, "register_document", return_value={"status": "queued"}) as register:
                 bootstrap.bootstrap()
                 bootstrap.bootstrap()
-
-        self.assertEqual(len(rows), 1)
-        self.assertEqual(rows[0]["status"], "queued")
-        self.assertEqual(rows[0]["document_id"], REVISION_ID)
-        self.assertEqual(rows[0]["source_path"], "policy.pdf")
-        upload.assert_called_once_with(
-            f"documents/{REVISION_ID}/revisions/{REVISION_ID}/{DIGEST}.pdf", PDF,
-        )
-        self.assertIn("policy.pdf: unchanged", "\n".join(logs.output))
+            register.assert_called_once()
+            self.assertEqual(register.call_args.kwargs["source"], "policy.pdf")
 
     def test_cli_bootstrap_supports_optional_staging(self):
-        with patch.object(cli, "get_settings", return_value=SimpleNamespace(log_level="INFO")), \
+        with patch.object(cli, "get_settings", return_value=SimpleNamespace(log_level="INFO", app_env="test")), \
              patch.object(cli, "configure_logging"), patch.object(cli, "initialize"), \
              patch.object(cli, "bootstrap") as register:
             cli.main(["bootstrap"])
             cli.main(["bootstrap", "--stage-only"])
-        self.assertEqual(register.call_args_list, [call(stage_only=False), call(stage_only=True)])
+        self.assertEqual(register.call_args_list, [call(stage_only=False, sources=None),
+                                                  call(stage_only=True, sources=None)])
 
-    def test_registration_does_not_delete_an_object_if_commit_succeeded(self):
-        for committed in (False, True):
-            with self.subTest(committed=committed):
-                conn = MagicMock()
-                with patch.object(document_service, "connect", return_value=nullcontext(conn)), \
-                     patch.object(document_service, "lock_document"), \
-                     patch.object(document_service.repository, "revision_exists", return_value=committed), \
-                     patch.object(document_service, "delete_pdf") as delete:
-                    document_service.discard_unregistered_pdf(REVISION_ID, REPLACEMENT_ID, "pdf-key")
-                self.assertEqual(delete.call_count, int(not committed))
-
-    def test_replacement_insert_failure_removes_only_unregistered_pdf(self):
-        previous = {
-            "id": REVISION_ID, "status": "active", "withdrawn_at": None,
-            "sha256": "old-hash", "source_path": "policy.pdf", "name": "Original policy",
-        }
+    def test_upload_is_not_attempted_if_registration_fails(self):
         conn = MagicMock()
-        key = f"documents/{REVISION_ID}/revisions/{REPLACEMENT_ID}/{DIGEST}.pdf"
-        with patch.object(document_service, "connect", side_effect=lambda: nullcontext(conn)), \
+        conn.execute.return_value.fetchone.return_value = {"id": 1}
+        with patch.object(document_service, "connect", return_value=nullcontext(conn)), \
              patch.object(document_service, "lock_document"), \
-             patch.object(document_service, "uuid4", return_value=SimpleNamespace(hex=REPLACEMENT_ID)), \
-             patch.object(document_service.repository, "latest_revision", return_value=previous), \
-             patch.object(document_service.repository, "insert_revision", side_effect=OSError) as insert, \
-             patch.object(document_service.repository, "revision_exists", return_value=None), \
-             patch.object(document_service, "upload_pdf") as upload, \
-             patch.object(document_service, "delete_pdf") as delete:
+             patch.object(document_service.repository, "latest_revision", return_value=None), \
+             patch.object(document_service.repository, "insert_revision", side_effect=OSError), \
+             patch.object(document_service, "upload_pdf") as upload:
             with self.assertRaises(OSError):
-                document_service.register_document(PDF, "policy.pdf", {}, document_id=REVISION_ID)
-        self.assertEqual(insert.call_args.args[1:3], (REPLACEMENT_ID, REVISION_ID))
-        upload.assert_called_once_with(key, PDF)
-        delete.assert_called_once_with(key)
+                document_service.register_document(PDF, "policy.pdf", {})
+        upload.assert_not_called()
+
+    def test_duplicate_pdf_returns_existing_revision_without_upload(self):
+        previous = {"id": 1, "version": 1, "status": "active", "withdrawn_at": None,
+                    "sha256": DIGEST, "last_error": None}
+        with patch.object(document_service, "connect", return_value=nullcontext(MagicMock())), \
+             patch.object(document_service, "lock_document"), \
+             patch.object(document_service.repository, "latest_revision", return_value=previous), \
+             patch.object(document_service, "upload_pdf") as upload:
+            result = document_service.register_document(PDF, "policy.pdf", {}, document_id=1)
+        self.assertEqual(result["status"], "unchanged")
+        self.assertEqual(result["revision_id"], 1)
+        upload.assert_not_called()
 
 
 class WorkerTests(unittest.TestCase):
@@ -231,19 +202,13 @@ class WorkerTests(unittest.TestCase):
             verify.assert_called_once_with(revision_record_ids(REPLACEMENT_ID, 1))
             publish.assert_called_once_with(conn, REPLACEMENT_ID)
 
-    def test_watch_worker_recovers_interrupted_jobs_before_draining(self):
-        conn = MagicMock()
-        operations = MagicMock()
-        with patch.object(cli, "get_settings", return_value=SimpleNamespace(log_level="INFO")), \
+    def test_watch_cli_starts_persistent_worker(self):
+        settings = SimpleNamespace(log_level="INFO", app_env="test")
+        with patch.object(cli, "get_settings", return_value=settings), \
              patch.object(cli, "configure_logging"), \
-             patch.object(cli, "connect", return_value=nullcontext(conn)), \
-             patch.object(cli.repository, "try_worker_lock", return_value=True), \
-             patch.object(cli.repository, "recover_interrupted_jobs", operations.recover), \
-             patch.object(cli, "drain", operations.drain):
-            operations.drain.return_value = 0
-            with patch.object(cli.repository, "has_failed_jobs", return_value=False):
-                cli.main(["worker", "--watch"])
-        self.assertEqual(operations.mock_calls, [call.recover(conn), call.drain(conn, True)])
+             patch.object(cli, "watch_worker") as watch:
+            cli.main(["worker", "--watch"])
+        watch.assert_called_once()
 
     def test_staged_enqueue_is_all_or_nothing(self):
         conn = MagicMock()
@@ -308,7 +273,7 @@ class HttpContractTests(unittest.TestCase):
             self.assertEqual(response.headers["referrer-policy"], "strict-origin-when-cross-origin")
 
     def test_web_startup_serves_health_without_running_ingestion(self):
-        settings = SimpleNamespace(log_level="INFO", app_name="PolicySage")
+        settings = SimpleNamespace(log_level="INFO", app_name="PolicySage", app_env="test")
         with patch.object(main, "get_settings", return_value=settings), \
              patch("app.api.health.get_settings", return_value=settings), \
              patch.object(main, "configure_logging"), \

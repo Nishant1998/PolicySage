@@ -31,16 +31,16 @@ class PostgreSQLQueueTests(unittest.TestCase):
                     conn.execute(sql.SQL("SET search_path TO {}").format(schema))
                 first.execute(SCHEMA)
                 first.execute("""
-                    INSERT INTO documents (id, document_id, document_revision, name, status, object_key, sha256)
-                    VALUES ('a', 'a', 'a', 'First', 'queued', 'a.pdf', 'first'),
-                           ('b', 'b', 'b', 'Second', 'queued', 'b.pdf', 'second'),
-                           ('c', 'c', 'c', 'Review', 'verifying', 'c.pdf', 'third')
+                    INSERT INTO documents (document_id, version, name, filename, status, object_key, sha256)
+                    VALUES (1, 1, 'First', 'a.pdf', 'queued', 'a.pdf', repeat('a', 64)),
+                           (2, 1, 'Second', 'b.pdf', 'queued', 'b.pdf', repeat('b', 64)),
+                           (3, 1, 'Review', 'c.pdf', 'verifying', 'c.pdf', repeat('c', 64))
                 """)
-                first.execute("UPDATE documents SET review_required=true WHERE id='c'")
+                first.execute("UPDATE documents SET review_required=true WHERE document_id=3")
 
                 with first.transaction():
-                    self.assertEqual(repository.claim_job(first)["id"], "a")
-                    self.assertEqual(repository.claim_job(second)["id"], "b")
+                    self.assertEqual(repository.claim_job(first)["document_id"], 1)
+                    self.assertEqual(repository.claim_job(second)["document_id"], 2)
                     self.assertIsNone(repository.claim_job(second))
 
                 repository.recover_interrupted_jobs(first)

@@ -12,4 +12,3 @@
 **/node_modules/
 frontend/build/
 frontend/.env*
-app/rag/local_vectorstore.py

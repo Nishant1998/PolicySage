@@ -69,7 +69,20 @@ def evidence_refs(documents):
 
 def event(name, **fields):
     request = current_request.get()
-    logger.info(name, extra={"fields": {"request_id": request["id"] if request else None, **fields}})
+    if name == "stage_finished" and fields.get("error_type"):
+        level = logging.WARNING
+    elif name in {"stage_finished", "request_started", "llm_tokens_reserved", "llm_usage", "token_budget_finished"}:
+        level = logging.DEBUG
+    elif name == "request_finished" and fields.get("error_type"):
+        level = logging.ERROR
+    elif name == "request_finished" and (fields.get("http_status") or 0) >= 400:
+        level = logging.WARNING
+    elif name == "request_finished" and (fields.get("routine") and (fields.get("http_status") or 500) < 400):
+        level = logging.DEBUG
+    else:
+        level = logging.INFO
+    if logger.isEnabledFor(level):
+        logger.log(level, name, extra={"fields": {"request_id": request["id"] if request else None, **fields}})
 
 
 @lru_cache(maxsize=1)
@@ -184,7 +197,7 @@ def observe_request(path, method, *, export=True):
         # Only our metadata-only spans are exported; disable automatic prompt capture.
         with tracing_context(enabled=False):
             yield request
-    except Exception as exc:
+    except BaseException as exc:
         request["error_type"] = type(exc).__name__
         request["cost_complete"] = False
         raise
@@ -194,7 +207,16 @@ def observe_request(path, method, *, export=True):
         summary["estimated_cost_usd"] = round(request["estimated_cost_usd"], 8) if request["cost_complete"] else None
         summary["total_tokens"] = request["input_tokens"] + request["output_tokens"]
         summary["duration_ms"] = round((monotonic() - started) * 1000, 2)
-        event("request_finished", path=path, **summary)
+        log_summary = dict(summary, method=method, routine=request.get("_routine", False))
+        if method != "WORKER":
+            log_summary.setdefault("http_status", None)
+        if not request["llm_calls"]:
+            for key in ("llm_calls", "input_tokens", "output_tokens", "total_tokens", "usage_missing", "estimated_cost_usd"):
+                log_summary.pop(key, None)
+        elif request["usage_missing"]:
+            for key in ("input_tokens", "output_tokens", "total_tokens"):
+                log_summary[key] = None
+        event("request_finished", path=path, **log_summary)
         root = request.get("_root")
         if root is not None:
             try:

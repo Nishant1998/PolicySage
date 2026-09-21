@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.budget import request_budget
 from app.core.config import get_settings
-from app.core.observability import current_request, observe_request, start_request_trace, trace_content
+from app.core.observability import current_request, start_request_trace, trace_content
 from app.db.document_repository import retrieval_snapshot
 from app.rag.answer_cache import get_answer
 from app.rag.state import ChatTurn, PolicyFilters
@@ -64,12 +64,17 @@ def stream_chat(payload, request):
 
         def run():
             try:
-                with observe_request("/api/chat", "POST", export=False):
-                    result = answer_chat(payload, request, on_stage=lambda stage: emit("stage", stage=stage))
+                result = answer_chat(payload, request, on_stage=lambda stage: emit("stage", stage=stage))
                 emit("final", result=result)
             except HTTPException as exc:
+                observation = current_request.get()
+                if observation is not None:
+                    observation["error_type"] = "ChatStreamFailed"
                 emit("error", message=exc.detail)
             except Exception:
+                observation = current_request.get()
+                if observation is not None:
+                    observation["error_type"] = "ChatStreamFailed"
                 logger.exception("Chat stream failed")
                 emit("error", message="Could not process the question. Please try again.")
 

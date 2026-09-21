@@ -6,15 +6,15 @@ import { ArchitectureDiagram } from "../components/ps/ArchitectureDiagram";
 import { LINKS } from "../lib/config";
 
 const capabilities = [
-  ["Hybrid search", "Semantic and BM25 keyword search find relevant policy passages, even when the wording differs from the question."],
-  ["Evidence before answers", "Passages are reranked and the evidence is assessed before an answer is generated."],
+  ["Hybrid search", "Semantic and BM25 keyword search retrieve candidate policy passages, which are combined and reranked."],
+  ["Evidence before answers", "Retrieved evidence is assessed before a grounded answer is generated. The app can search selected official websites when policy evidence is insufficient."],
   ["Answers you can check", "References include the document, an excerpt and page details when available."],
-  ["Admin workflow", "Upload documents and revisions, review and publish them, retry failed jobs and withdraw documents."],
+  ["Admin workflow", "Upload documents and revisions, approve review-required revisions, retry failed jobs and withdraw documents."],
 ];
 
 const decisions = [
   ["Hybrid search", "Policy wording rarely matches how people ask. Semantic matching finds passages phrased differently from the question, while BM25 still catches exact terms such as “co-payment” or “room rent”."],
-  ["PostgreSQL as the publication authority", "Qdrant can hold chunks from many revisions, but PostgreSQL decides which are published. Retrieval only considers eligible revisions, so withdrawn or unapproved documents stay out of answers."],
+  ["PostgreSQL as the publication authority", "PostgreSQL tracks which revisions are published. The knowledge-base search filters Qdrant to eligible revisions, excluding withdrawn and unapproved revisions."],
 ];
 
 const H2 = ({ children }) => <h2 className="font-display text-lg font-bold tracking-tight text-slate-900 sm:text-xl">{children}</h2>;
@@ -42,7 +42,7 @@ export default function AboutPage() {
           <p className="font-mono text-xs uppercase tracking-wider text-blue-700">About Project</p>
           <h1 className="font-display mt-2 text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">PolicySage</h1>
           <p className="mt-4 max-w-2xl text-base leading-relaxed text-slate-700 sm:text-lg" data-testid="about-overview">
-            PolicySage lets people ask plain-English questions about Indian insurance policy documents and inspect the passages behind each answer. Answers come with references to the document, excerpt and page. They depend on the documents available to the application, and it says so when evidence is missing.
+            PolicySage lets people ask plain-English questions about Indian insurance and inspect the evidence used in supported answers. Policy citations can include an excerpt and page number. When policy evidence is insufficient, the app can search selected public sources or explain that it could not find enough evidence.
           </p>
           <div className="mt-6"><Links prefix="about-top" /></div>
         </section>
@@ -62,7 +62,7 @@ export default function AboutPage() {
         <section className="mt-14">
           <H2>How it works</H2>
           <p className="mt-3 max-w-2xl text-[15px] leading-relaxed text-slate-700">
-            Documents and questions follow two paths. An admin's PDF is stored in object storage and registered in PostgreSQL. A separate ingestion worker then parses, chunks and indexes it in Qdrant. When someone asks a question, FastAPI receives it and LangGraph coordinates retrieval, evidence selection and answer generation. PostgreSQL decides which revisions are published, so only eligible chunks are searched.
+            An admin can upload a PDF, which is registered in PostgreSQL and stored in object storage. A separate worker parses, chunks and indexes it in Qdrant. FastAPI receives questions and LangGraph coordinates routing, retrieval, evidence assessment and answer generation. If policy evidence is insufficient, the app can search selected public sources.
           </p>
           <div className="mt-5"><ArchitectureDiagram /></div>
         </section>
@@ -83,12 +83,12 @@ export default function AboutPage() {
           <H2>Evaluation and limitations</H2>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
-              <p className="text-sm font-semibold text-amber-900">Evaluation in progress</p>
-              <p className="mt-1 text-sm leading-relaxed text-amber-900/90">Formal evaluation is not complete, so no accuracy figures are claimed. Results and the method will be published in the GitHub repository.</p>
+              <p className="text-sm font-semibold text-amber-900">Evaluation</p>
+              <p className="mt-1 text-sm leading-relaxed text-amber-900/90">The workflow has been tested with sample questions and controlled cases. A comprehensive accuracy evaluation is not complete, so no accuracy figure is claimed.</p>
             </div>
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
               <p className="text-sm font-semibold text-slate-900">Limitations</p>
-              <p className="mt-1 text-sm leading-relaxed text-slate-600">Answers are limited to the available documents. Policy terms vary by insurer, product and revision, so check your own policy wording.</p>
+              <p className="mt-1 text-sm leading-relaxed text-slate-600">Answers depend on available policy documents and public sources. Retrieval or generated answers can be incomplete or incorrect. Policy terms vary by insurer, product and revision, so check your own policy wording.</p>
             </div>
           </div>
         </section>

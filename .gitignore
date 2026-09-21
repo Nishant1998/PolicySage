@@ -149,7 +149,6 @@ __marimo__/
 /data/
 /evaluation/
 /experiments/
-/app/rag/local_vectorstore.py
 /_*.py
 /_audit*.json
 /batch_baseline.py

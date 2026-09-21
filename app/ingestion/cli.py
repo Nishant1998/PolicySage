@@ -36,7 +36,8 @@ def main(argv=None):
     if args.stage_only and args.command != "bootstrap":
         parser.error("--stage-only requires bootstrap.")
 
-    configure_logging(get_settings().log_level)
+    settings = get_settings()
+    configure_logging(settings.log_level, structured=settings.app_env == "production")
     if args.command in ("init", "bootstrap"):
         with observe_request("kb_init", "WORKER"):
             initialize()

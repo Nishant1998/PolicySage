@@ -49,7 +49,7 @@ Repeat `--source` to queue multiple staged PDFs that you confirmed are missing f
 Start the site in one terminal and run the worker in another using the same environment.
 
 ```powershell
-python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+python -m uvicorn app.main:app --no-access-log --host 127.0.0.1 --port 8000
 ```
 
 ```powershell

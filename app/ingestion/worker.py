@@ -1,4 +1,3 @@
-import hashlib
 import logging
 import time
 
@@ -36,7 +35,7 @@ def drain(conn, watch):
             cleaning = revision["status"] == "cleaning"
             try:
                 with observe_request("kb_worker", "WORKER") as observation:
-                    observation["revision_ref"] = hashlib.sha256(str(revision_id).encode()).hexdigest()[:16]
+                    observation["revision_id"] = revision_id
                     with span("process_revision") as trace:
                         trace["starting_status"] = revision["status"]
                         if cleaning:
@@ -50,7 +49,6 @@ def drain(conn, watch):
                 failures += 1
                 error = str(exc) if isinstance(exc, ValueError) else type(exc).__name__
                 repository.fail_job(conn, revision_id, cleaning, error)
-                logger.error("Revision %s failed (%s)", revision_id, error)
             progress.update(1)
 
 

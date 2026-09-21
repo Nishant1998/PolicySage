@@ -36,8 +36,8 @@ export const ArchitectureDiagram = () => (
       </div>
       <Lane label="Question answering · live" testid="diagram-question-lane" steps={[
         { title: "User question", role: "Received by FastAPI; LangGraph coordinates the workflow" },
-        { title: "Retrieve and select evidence", role: "Hybrid search over eligible revisions, then reranking" },
-        { title: "Answer with citations", role: "References with excerpts and pages when available", accent: true },
+        { title: "Retrieve and assess evidence", role: "Hybrid search, reranking and optional public web search" },
+        { title: "Prepare a response", role: "Supported answers include references; insufficient evidence is disclosed", accent: true },
       ]} />
     </div>
     <figcaption className="mt-4 text-xs text-slate-500">High-level view. Modules, graph nodes and API routes are left out.</figcaption>
