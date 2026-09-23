@@ -26,19 +26,30 @@ export const ArchitectureDiagram = () => (
   <figure data-testid="architecture-diagram" className="rounded-2xl border border-slate-200 bg-slate-50 p-4 sm:p-6">
     <div className="space-y-5">
       <Lane label="Ingestion · background" testid="diagram-ingestion-lane" steps={[
-        { title: "Policy PDFs", role: "Original files kept in object storage" },
-        { title: "Parse and chunk", role: "Separate ingestion worker processes queued documents" },
-        { title: "Index in Qdrant", role: "Searchable chunks for dense and BM25 retrieval" },
+        { title: "Upload PDFs", role: "Store originals in object storage and register revisions" },
+        { title: "Process documents", role: "Background worker parses, chunks and embeds PDFs" },
+        { title: "Index in Qdrant", role: "Store passages for semantic and BM25 search" },
       ]} />
       <div className="flex items-center gap-3 rounded-lg border border-dashed border-slate-300 bg-white px-3 py-2.5" data-testid="diagram-postgres">
         <span className="shrink-0 rounded-md bg-slate-900 px-2 py-1 font-mono text-[11px] font-semibold text-white">PostgreSQL</span>
-        <p className="text-xs leading-snug text-slate-700">Tracks revisions and publication status, and decides which revisions may be searched.</p>
+        <p className="text-xs leading-snug text-slate-700">Tracks document revisions and publication status; retrieval is restricted to eligible revisions.</p>
       </div>
       <Lane label="Question answering · live" testid="diagram-question-lane" steps={[
-        { title: "User question", role: "Received by FastAPI; LangGraph coordinates the workflow" },
-        { title: "Retrieve and assess evidence", role: "Hybrid search, reranking and optional public web search" },
-        { title: "Prepare a response", role: "Supported answers include references; insufficient evidence is disclosed", accent: true },
+        { title: "Route question", role: "FastAPI receives the question; LangGraph selects a path and can decompose it" },
+        { title: "Retrieve and assess evidence", role: "Hybrid search, fusion, reranking and evidence grading" },
+        { title: "Generate response", role: "Provide available references or explain missing evidence", accent: true },
       ]} />
+      <div className="flex items-center justify-center gap-1 text-xs font-medium text-slate-600">
+        <ArrowDown size={14} aria-hidden="true" /> Conditional paths
+      </div>
+      <div className="grid gap-3 md:grid-cols-2" aria-label="Conditional question-answering paths">
+        <div className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-xs leading-snug text-slate-700">
+          <span className="font-semibold text-slate-900">Direct path:</span> Some questions receive a direct answer or clarification without document retrieval.
+        </div>
+        <div className="rounded-lg border border-dashed border-blue-300 bg-blue-50 px-3 py-2.5 text-xs leading-snug text-slate-700">
+          <span className="font-semibold text-blue-900">If evidence is insufficient:</span> Search selected official websites when permitted and assess the results. Within retry limits and budgets, rewrite the query and repeat research through the knowledge base and web. Disclose limitations if evidence remains insufficient.
+        </div>
+      </div>
     </div>
     <figcaption className="mt-4 text-xs text-slate-500">High-level view. Modules, graph nodes and API routes are left out.</figcaption>
   </figure>
