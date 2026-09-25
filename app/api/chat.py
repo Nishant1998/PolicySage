@@ -36,9 +36,7 @@ class ChatRequest(BaseModel):
 
 def chat_access(request: Request):
     settings = get_settings()
-    if not settings.public_chat_enabled or not settings.kb_managed or (
-        settings.app_env == "production" and not settings.kb_managed
-    ):
+    if not settings.public_chat_enabled or not settings.kb_managed:
         raise HTTPException(503, "The public demo is temporarily unavailable.")
     reserve_request(request, "chat")
     with request_slot("chat"):

@@ -1,20 +1,22 @@
 # Deployment
 
+See the [setup guide](docs/setup.md#deploy-on-render) for the Docker commands, Render settings and resource checks.
+
 ## Public-demo protection
 
 Deploy with `APP_ENV=production`, one application instance, one web worker, and a persistent volume for `USAGE_DB_PATH`. Anonymous production chat requires `KB_MANAGED=true`. Configure the PostgreSQL registry and verify the existing Qdrant collection before enabling chat. Hybrid search uses the registry to determine which revisions are published. Set `PUBLIC_CHAT_ENABLED=false` and restart to pause public chat.
 
-The default limits are six chats per minute per IP, 30 chats per UTC day, 300 chats per UTC month, and two concurrent chats. Each chat can start up to six KB searches and, if web search is enabled, up to two outbound web attempts including retries. Keep `WEB_SEARCH_ENABLED=false` and `PUBLIC_PDF_DOWNLOADS_ENABLED=false` for the low-cost demo. Public citations can use official publisher URLs, while admins preview stored PDFs through the authenticated endpoint. If public stored downloads are enabled, link issuance is capped at three per IP per minute, 20 per day, and 100 per month. An issued URL can be reused until expiry, so issuance limits do not cap storage egress.
+The default limits are six chats per minute per IP, 30 chats per UTC day, 300 chats per UTC month, and two concurrent chats. Each chat can start up to six KB searches and, if web search is enabled, up to four outbound web attempts including retries. Keep `WEB_SEARCH_ENABLED=false` and `PUBLIC_PDF_DOWNLOADS_ENABLED=false` for the low-cost demo. Public citations can use official publisher URLs, while admins preview stored PDFs through the authenticated endpoint. If public stored downloads are enabled, link issuance is capped at three per IP per minute, 20 per day, and 100 per month. An issued URL can be reused until expiry, so issuance limits do not cap storage egress.
 
 Before launch, test the monthly cap across two client IPs with a small temporary limit, confirm it persists across a restart, and confirm requests rejected by the limiter never reach a provider. Verify the public PDF and admin routes with an unauthenticated client. Set provider-side spending controls for the demo credentials, since request and token counters alone cannot guarantee a fixed invoice.
 
 ### Token budgets
 
-`MAX_REQUEST_TOKENS=48000` bounds accounted LLM input plus output across one question and its research steps. `MAX_PROMPT_TOKENS=14000` caps estimated input per model call, including a 512-token safety buffer; `MAX_ANSWER_TOKENS=1500` reserves and caps output separately. Choose a prompt-plus-output allowance within the configured model's context window. `MAX_QUESTION_TOKENS=1024` bounds the current and resolved question individually. `MAX_HISTORY_TOKENS=2000` removes oldest complete exchanges when history grows too large. The browser still retains up to four exchanges; the server decides how much to send to the model.
+`MAX_REQUEST_TOKENS=72000` bounds accounted LLM input plus output across one question and its research steps. `MAX_PROMPT_TOKENS=14000` caps estimated input per model call, including a 512-token safety buffer; `MAX_ANSWER_TOKENS=1500` reserves and caps output separately. Choose a prompt-plus-output allowance within the configured model's context window. `MAX_QUESTION_TOKENS=1024` bounds the current and resolved question individually. `MAX_HISTORY_TOKENS=2000` removes oldest complete exchanges when history grows too large. The browser still retains up to four exchanges; the server decides how much to send to the model.
 
 Before each model call, reserve estimated prompt tokens (instructions, question, history, evidence, response schema and framing allowance) plus maximum output tokens. Reconcile with reported usage after the call; missing usage or call failure retains the conservative reservation. Research calls leave one full prompt/output allowance for the final response. Low remaining allowance skips decomposition or another rewrite; if a required call cannot fit, return a brief limitation without another model call.
 
-Formatted evidence has an 8,000-token allowance. Prompts include compact identifying metadata; full source metadata remains available for citations. Grading and generation remove whole lowest-ranked passages until the complete prompt fits the per-call and remaining request allowances. An answer whose evidence was reduced carries a partial-context limitation. See `docs/TOKEN_BUDGET.md` for local sizing measurements and their limits.
+Formatted evidence has an 8,000-token allowance. Prompts include compact identifying metadata; full source metadata remains available for citations. Grading and generation remove whole lowest-ranked passages until the complete prompt fits the per-call and remaining request allowances. An answer whose evidence was reduced carries a partial-context limitation.
 
 Prompt counts use the model's tiktoken encoding when known, otherwise `cl100k_base`. These are preflight estimates, not an exact billing cap. Provider framing or reasoning-token accounting can differ; usage reported above a reservation reduces the remaining allowance and stops later calls when necessary. Embedding and web-search costs are outside this LLM token budget. Set provider-side spending limits as well.
 
@@ -56,7 +58,7 @@ Web startup initializes usage and audit storage and loads the reranker. Allow ti
 
 ## Checks
 
-Track release evidence and run the optional real PostgreSQL claim test using the [release verification checklist](docs/release-verification.md).
+The [PostgreSQL claim test](tests/test_postgres_queue.py) runs when `POLICYSAGE_TEST_POSTGRES` points to a disposable local database named `policysage_test`.
 
 Run `uv run --frozen python -m unittest discover -s tests -v`. Tests replace external services and tokenizer loading with fakes. Live provider and Docker checks are separate.
 

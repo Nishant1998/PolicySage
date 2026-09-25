@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { KeyRound, LogOut, Upload } from "lucide-react";
+import { KeyRound, LogOut, RefreshCw, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { Header } from "../components/ps/Header";
 import { Footer } from "../components/ps/Footer";
@@ -10,8 +10,17 @@ import { UploadDialog } from "../components/admin/UploadDialog";
 import { adminApi } from "../lib/api";
 
 const TokenBar = ({ credentials, setCredentials }) => {
+  const qc = useQueryClient();
   const [username, setUsername] = useState("admin");
   const [password, setPassword] = useState("");
+  const signIn = useMutation({
+    mutationFn: (candidate) => adminApi.documents(candidate),
+    onSuccess: (documents, candidate) => {
+      qc.setQueryData(["docs", candidate], documents);
+      setCredentials(candidate);
+      setPassword("");
+    },
+  });
   if (credentials) return (
     <div className="flex items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900" data-testid="admin-auth-status">
       <span className="flex items-center gap-2"><KeyRound size={15} /> Signed in as {credentials.username} for this session.</span>
@@ -19,30 +28,28 @@ const TokenBar = ({ credentials, setCredentials }) => {
     </div>
   );
   return (
-    <form onSubmit={(e) => { e.preventDefault(); if (username.trim() && password) setCredentials({ username: username.trim(), password }); }} className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-white p-4 sm:flex-row sm:items-center">
+    <form onSubmit={(e) => { e.preventDefault(); if (username.trim() && password && !signIn.isPending) signIn.mutate({ username: username.trim(), password }); }} className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-white p-4 sm:flex-row sm:items-center">
       <KeyRound size={16} className="hidden text-slate-500 sm:block" />
       <input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Admin username" autoComplete="username" data-testid="admin-username-input"
         className="h-10 flex-1 rounded-lg border border-slate-300 px-3 text-sm outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100" />
       <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Admin password" autoComplete="current-password" data-testid="admin-password-input"
         className="h-10 flex-1 rounded-lg border border-slate-300 px-3 text-sm outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100" />
-      <button type="submit" data-testid="admin-token-submit" className="h-10 rounded-lg bg-slate-900 px-4 text-sm font-semibold text-white hover:bg-slate-700">Sign in</button>
+      <button type="submit" disabled={signIn.isPending} data-testid="admin-token-submit" className="h-10 rounded-lg bg-slate-900 px-4 text-sm font-semibold text-white hover:bg-slate-700 disabled:cursor-wait disabled:opacity-60">{signIn.isPending ? "Signing in..." : "Sign in"}</button>
+      {signIn.error && <p role="alert" className="text-sm text-red-800" data-testid="admin-login-error">{signIn.error.message}</p>}
     </form>
   );
 };
 
 export default function AdminPage() {
   const qc = useQueryClient();
-  const [credentials, setCredentialsState] = useState(null);
+  const [credentials, setCredentials] = useState(null);
   const [dialog, setDialog] = useState({ open: false, doc: null });
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const live = Boolean(credentials);
 
-  const setCredentials = (value) => {
-    setCredentialsState(value);
-  };
-  const docsQ = useQuery({ queryKey: ["docs", credentials], queryFn: () => adminApi.documents(credentials), enabled: live, refetchInterval: 10000 });
-  const jobsQ = useQuery({ queryKey: ["jobs", credentials], queryFn: () => adminApi.jobs(credentials), enabled: live, refetchInterval: 10000 });
+  const docsQ = useQuery({ queryKey: ["docs", credentials], queryFn: () => adminApi.documents(credentials), enabled: live, retry: false });
+  const jobsQ = useQuery({ queryKey: ["jobs", credentials], queryFn: () => adminApi.jobs(credentials), enabled: live, retry: false });
 
   const act = useMutation({
     mutationFn: ({ fn }) => fn(),
@@ -67,7 +74,16 @@ export default function AdminPage() {
   const error = docsQ.error || jobsQ.error;
 
   const actions = {
-    preview: (d) => { const tab = window.open("about:blank", "_blank"); if (!tab) return toast.error("Allow pop-ups to preview the PDF."); tab.opener = null; run(async () => { const r = await adminApi.preview(credentials, d.revisionId); if (!r?.url) throw new Error("No preview link was returned."); tab.location.replace(r.url); }, "Preview opened"); },
+    preview: (document) => {
+      const tab = window.open("about:blank", "_blank");
+      if (!tab) return toast.error("Allow pop-ups to preview the PDF.");
+      tab.opener = null;
+      run(async () => {
+        const result = await adminApi.preview(credentials, document.revisionId);
+        if (!result?.url) throw new Error("No preview link was returned.");
+        tab.location.replace(result.url);
+      }, "Preview opened");
+    },
     revision: (d) => setDialog({ open: true, doc: d }),
     approve: (d) => run(() => adminApi.approve(credentials, d.revisionId), "Revision approved"),
     withdraw: (d) => run(() => adminApi.withdraw(credentials, d.id), "Document withdrawn"),
@@ -83,13 +99,20 @@ export default function AdminPage() {
             <h1 className="font-display text-2xl font-bold tracking-tight text-slate-900">Document management</h1>
             <p className="mt-1 text-sm text-slate-600">Authorized admins only. Only published revisions are searchable by the public assistant.</p>
           </div>
+          <div className="flex flex-wrap gap-2">
+          <button onClick={() => { docsQ.refetch(); jobsQ.refetch(); }} disabled={!live || docsQ.isFetching || jobsQ.isFetching}
+            data-testid="admin-refresh-button" className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+            <RefreshCw size={15} /> Refresh status
+          </button>
           <button onClick={() => setDialog({ open: true, doc: null })} disabled={!live} data-testid="upload-document-button"
             className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300">
             <Upload size={15} /> Upload PDF
           </button>
+          </div>
         </div>
         <TokenBar credentials={live ? credentials : null} setCredentials={setCredentials} />
         {error && <p className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800" data-testid="admin-error">{error.message}</p>}
+        {live && <p className="text-xs text-slate-500">Use Refresh status to check ingestion progress.</p>}
         <Tabs defaultValue="documents">
           <TabsList>
             <TabsTrigger value="documents" data-testid="admin-tab-documents">Documents ({docs.length})</TabsTrigger>

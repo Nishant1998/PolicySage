@@ -5,6 +5,7 @@ from asyncio import to_thread
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.datastructures import MutableHeaders
 
 from app.api import admin_documents, chat, document_sources, health
 from app.core.config import BASE_DIR, get_settings
@@ -55,10 +56,7 @@ async def limit_request_size(request: Request, call_next):
         limit = body_limit(request.url.path)
         if size < 0 or size > limit:
             return JSONResponse({"detail": "Request is too large."}, status_code=413)
-    response = await call_next(request)
-    response.headers["X-Content-Type-Options"] = "nosniff"
-    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-    return response
+    return await call_next(request)
 
 
 class RequestObservation:
@@ -78,29 +76,35 @@ class RequestObservation:
             safe_path = "/api/kb/revisions"
         with observe_request(safe_path, scope["method"], export=False) as observation:
             observation["_routine"] = routine
+            response_complete = False
 
             async def observed_receive():
                 message = await receive()
-                if message["type"] == "http.disconnect":
+                if message["type"] == "http.disconnect" and not response_complete:
                     observation["error_type"] = "ClientDisconnected"
                 return message
 
             async def observed_send(message):
+                nonlocal response_complete
                 if message["type"] == "http.response.start":
                     observation["http_status"] = message["status"]
                     if message["status"] >= 500:
                         observation["error_type"] = "RequestFailed"
-                    headers = list(message.get("headers", []))
-                    headers.extend([
+                    headers = MutableHeaders(raw=list(message.get("headers", [])))
+                    for name, value in [
                         (b"x-request-id", observation["id"].encode("ascii")),
                         (b"x-content-type-options", b"nosniff"),
                         (b"referrer-policy", b"strict-origin-when-cross-origin"),
                         (b"x-frame-options", b"DENY"),
                         (b"cache-control", b"no-store"),
                         (b"content-security-policy", b"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"),
-                    ])
-                    message = {**message, "headers": headers}
+                    ]:
+                        headers[name.decode("ascii")] = value.decode("ascii")
+                    message = {**message, "headers": headers.raw}
                 await send(message)
+                if (message["type"] == "http.response.body" and not message.get("more_body", False)
+                        or message["type"] == "http.response.pathsend"):
+                    response_complete = True
 
             await self.app(scope, observed_receive, observed_send)
 

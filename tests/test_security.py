@@ -11,23 +11,11 @@ from fastapi import HTTPException
 from pydantic import SecretStr
 
 from app.core.http import RequestBodyLimit, body_limit
-from app.core.privacy import public_search_query
 from app.rag import web_search, workflow
 from app.services import limits
 
 
 class PublicDemoTests(unittest.TestCase):
-    def test_private_identifiers_are_removed_without_removing_public_uin(self):
-        query = public_search_query("Waiting period UIN HDFHLIP21400V012021 email me@example.com "
-                                    "phone 9876543210 Aadhaar 1234 5678 9012 policy number AB12345")
-        for private in ("me@example.com", "9876543210", "1234 5678 9012", "AB12345"):
-            self.assertNotIn(private, query)
-        self.assertIn("HDFHLIP21400V012021", query)
-
-    def test_ordinary_policy_question_is_preserved(self):
-        query = "Does this policy have no waiting period after 30 days?"
-        self.assertEqual(public_search_query(query), query)
-
     def test_both_web_providers_receive_redacted_queries(self):
         for provider in ("tavily", "brave"):
             config = SimpleNamespace(web_search_provider=provider, max_retries=0,

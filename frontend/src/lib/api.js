@@ -21,13 +21,13 @@ export const stageLabel = (s) => {
 const absolute = (url) => (url && url.startsWith("/") ? `${API_BASE}${url}` : url);
 
 const normalizeCitation = (c, i) => ({
-  id: String(c?.id ?? c?.citation_id ?? c?.marker ?? i + 1),
-  title: c?.title ?? c?.document_title ?? null,
-  pageStart: c?.page_start ?? c?.page ?? null,
+  id: String(c?.id ?? i + 1),
+  title: c?.title ?? null,
+  pageStart: c?.page_start ?? null,
   pageEnd: c?.page_end ?? null,
-  excerpt: c?.excerpt ?? c?.text ?? null,
-  sourceUrl: absolute(c?.url ?? c?.pdf_url ?? c?.source_url),
-  access: c?.access ?? c?.pdf_access ?? ((c?.url ?? c?.pdf_url ?? c?.source_url) ? null : "unavailable"),
+  excerpt: c?.excerpt ?? null,
+  sourceUrl: absolute(c?.url),
+  access: c?.access ?? (c?.url ? null : "unavailable"),
   pageNav: c?.supports_page_navigation ?? true,
 });
 
@@ -39,7 +39,7 @@ export function normalizeResponse(raw) {
   const status = raw?.status ?? (citations.length ? "answered" : "conversational");
   return {
     status: status === "insufficient_evidence" ? "no_evidence" : status,
-    answer: raw?.answer ?? raw?.message ?? "",
+    answer: raw?.answer ?? "",
     citations,
     trace: (Array.isArray(raw?.trace) ? raw.trace : []).map(normalizeTrace),
     limitations: Array.isArray(raw?.limitations) ? raw.limitations : [],

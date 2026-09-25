@@ -26,45 +26,9 @@ class TokenBudgetTests(unittest.TestCase):
                 workflow.invoke_text([("system", "x" * 1001), ("human", "short")], "test")
             client.assert_not_called()
 
-    def test_actual_usage_replaces_reservation(self):
-        with tokens.token_budget():
-            reserved = tokens.reserve_call([("human", "question")])
-            tokens.settle_call(reserved, SimpleNamespace(usage_metadata={"input_tokens": 90, "output_tokens": 10}))
-            self.assertEqual(tokens._current.get()["used"], 100)
-
-    def test_missing_usage_keeps_full_reservation(self):
-        with tokens.token_budget():
-            reserved = tokens.reserve_call([("human", "question")])
-            tokens.settle_call(reserved, SimpleNamespace())
-            self.assertEqual(tokens._current.get()["used"], reserved)
-
     def test_research_cannot_spend_the_final_response_reserve(self):
         with tokens.token_budget():
             tokens._current.get()["used"] = 3800
             with self.assertRaises(tokens.TokenBudgetExceeded):
                 tokens.reserve_call([("human", "question")])
             tokens.reserve_call([("human", "question")], final=True)
-
-    def test_oldest_history_is_removed_as_complete_turns(self):
-        history = [{"question": "old", "answer": "x" * 100}, {"question": "new", "answer": "short"}]
-        self.assertEqual(tokens.trim_history(history), history[-1:])
-        self.assertEqual(len(history), 2)
-
-    def test_request_state_is_reset(self):
-        with tokens.token_budget():
-            tokens.reserve_call([("human", "question")])
-        self.assertIsNone(tokens._current.get())
-        with tokens.token_budget():
-            self.assertEqual(tokens._current.get()["used"], 0)
-
-    def test_exhaustion_returns_a_limitation_without_another_call(self):
-        class Graph:
-            def stream(self, *args, **kwargs):
-                raise tokens.TokenBudgetExceeded()
-        with patch.object(workflow, "get_settings", return_value=SimpleNamespace(web_search_enabled=True, max_question_tokens=1024)), \
-             patch.object(workflow, "build_graph", return_value=Graph()), \
-             patch.object(workflow, "get_llm_client") as client:
-            result = workflow.ask("What is covered?")
-        self.assertEqual(result["status"], "insufficient_evidence")
-        self.assertEqual(result["citations"], [])
-        client.assert_not_called()

@@ -147,6 +147,8 @@ __marimo__/
 /.venv-experiments/
 /experiments-environment.txt
 /data/
+/tmp/
+/PolicySage_code_*.zip
 /evaluation/
 /experiments/
 /_*.py

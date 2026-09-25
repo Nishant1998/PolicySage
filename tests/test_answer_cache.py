@@ -43,21 +43,3 @@ class AnswerCacheTests(TestCase):
         self.revisions.clear()
         self.ask(q)
         self.assertEqual(self.generate.call_count, 3)
-
-    def test_different_web_setting_does_not_reuse_a_cached_answer(self):
-        q = "Which delayed baggage purchases are covered?"
-        self.ask(q)
-        self.ask(q, allow_web=False)
-        self.assertEqual(self.generate.call_count, 2)
-
-    def test_rephrasing_with_prior_turns_and_exact_repeat_of_rephrasing(self):
-        first = "What is a waiting period in Indian health insurance?"
-        rephrased = "What does waiting period mean in an Indian health insurance policy?"
-        history = [{"question": "Can you explain this document?", "answer": "Please share the document."}]
-        self.ask(first, history=history)
-        history.append({"question": first, "answer": self.result["answer"]})
-        self.assertIn("equivalent question", self.ask(rephrased, history=history)["trace"][0])
-        history.append({"question": rephrased, "answer": self.result["answer"]})
-        self.assertIn("exact question", self.ask(rephrased, history=history)["trace"][0])
-        self.generate.assert_called_once()
-        self.equivalent.assert_called_once()

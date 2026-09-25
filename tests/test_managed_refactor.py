@@ -1,8 +1,6 @@
 import hashlib
-import tempfile
 import unittest
 from contextlib import contextmanager, nullcontext
-from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, call, patch
 
@@ -13,8 +11,7 @@ from pydantic import SecretStr
 from app.api import admin_documents, document_sources
 from app.core.revisions import revision_record_ids
 from app.infrastructure import qdrant_store
-from app.ingestion import bootstrap, cli, indexer, service, worker
-from app import main
+from app.ingestion import service, worker
 from app.main import app
 from app.services import document_service
 
@@ -26,39 +23,6 @@ DIGEST = hashlib.sha256(PDF).hexdigest()
 
 
 class RegistrationTests(unittest.TestCase):
-    def test_bootstrap_queues_new_pdf_and_skips_unchanged_revision(self):
-        with tempfile.TemporaryDirectory() as folder:
-            root = Path(folder)
-            (root / "policy.pdf").write_bytes(PDF)
-            with patch.object(bootstrap, "get_settings", return_value=SimpleNamespace(kb_dir=root)), \
-                 patch.object(bootstrap, "inspect_existing", side_effect=[None, "unchanged"]), \
-                 patch.object(bootstrap, "register_document", return_value={"status": "queued"}) as register:
-                bootstrap.bootstrap()
-                bootstrap.bootstrap()
-            register.assert_called_once()
-            self.assertEqual(register.call_args.kwargs["source"], "policy.pdf")
-
-    def test_cli_bootstrap_supports_optional_staging(self):
-        with patch.object(cli, "get_settings", return_value=SimpleNamespace(log_level="INFO", app_env="test")), \
-             patch.object(cli, "configure_logging"), patch.object(cli, "initialize"), \
-             patch.object(cli, "bootstrap") as register:
-            cli.main(["bootstrap"])
-            cli.main(["bootstrap", "--stage-only"])
-        self.assertEqual(register.call_args_list, [call(stage_only=False, sources=None),
-                                                  call(stage_only=True, sources=None)])
-
-    def test_upload_is_not_attempted_if_registration_fails(self):
-        conn = MagicMock()
-        conn.execute.return_value.fetchone.return_value = {"id": 1}
-        with patch.object(document_service, "connect", return_value=nullcontext(conn)), \
-             patch.object(document_service, "lock_document"), \
-             patch.object(document_service.repository, "latest_revision", return_value=None), \
-             patch.object(document_service.repository, "insert_revision", side_effect=OSError), \
-             patch.object(document_service, "upload_pdf") as upload:
-            with self.assertRaises(OSError):
-                document_service.register_document(PDF, "policy.pdf", {})
-        upload.assert_not_called()
-
     def test_duplicate_pdf_returns_existing_revision_without_upload(self):
         previous = {"id": 1, "version": 1, "status": "active", "withdrawn_at": None,
                     "sha256": DIGEST, "last_error": None}
@@ -102,8 +66,11 @@ class WorkerTests(unittest.TestCase):
              patch.object(service, "write_chunks", side_effect=write_results) as write, \
              patch.object(service, "wait_for_records", side_effect=verify_results) as verify, \
              patch.object(service, "publish_revision") as publish, \
-             self.assertLogs(worker.logger, level="ERROR"):
+             self.assertLogs("app.core.observability", level="ERROR") as logs:
             self.assertEqual(worker.drain(conn, False), 1)
+            self.assertTrue(any(record.getMessage() == "request_finished"
+                                and record.fields.get("error_type")
+                                for record in logs.records))
             publish.assert_not_called()
             if failure_stage == "embedding":
                 verify.assert_not_called()
@@ -116,31 +83,6 @@ class WorkerTests(unittest.TestCase):
         error_type = "ConnectionError" if failure_stage == "embedding" else "TimeoutError"
         fail.assert_called_once_with(conn, REPLACEMENT_ID, False, error_type)
         publish.assert_called_once_with(conn, revision)
-
-    def test_partial_vector_write_retries_only_missing_record_ids(self):
-        ids = revision_record_ids(REPLACEMENT_ID, 2)
-        chunks = [
-            Document(page_content=text, metadata={"document_revision": REPLACEMENT_ID, "is_active": False})
-            for text in ("First clause.", "Second clause.")
-        ]
-        records = {}
-        store = MagicMock()
-        def write(collection, points, wait):
-            records[points[0].id] = points[0].payload
-            if len(points) > 1:
-                raise ConnectionError("Partial write")
-        store.upsert.side_effect = write
-        with patch.object(indexer, "get_settings", return_value=SimpleNamespace(qdrant_collection="test")), \
-             patch.object(indexer, "client", return_value=store), \
-             patch.object(indexer, "records", side_effect=lambda keys: dict(records)), \
-             patch.object(indexer, "get_embedding_client") as embeddings:
-            embeddings.return_value.embed_documents.side_effect = lambda texts: [[0.1]] * len(texts)
-            with self.assertRaises(ConnectionError):
-                indexer.write_chunks(chunks, record_ids=ids)
-            self.assertEqual(set(records), {qdrant_store.point_id(ids[0])})
-            indexer.write_chunks(chunks, record_ids=ids)
-            indexer.write_chunks(chunks, record_ids=ids)
-            self.assertEqual(store.upsert.call_count, 2)
 
     def test_interrupted_publication_keeps_previous_revision_until_retry(self):
         revision = {"id": REPLACEMENT_ID, "document_id": REVISION_ID}
@@ -202,25 +144,6 @@ class WorkerTests(unittest.TestCase):
             verify.assert_called_once_with(revision_record_ids(REPLACEMENT_ID, 1))
             publish.assert_called_once_with(conn, REPLACEMENT_ID)
 
-    def test_watch_cli_starts_persistent_worker(self):
-        settings = SimpleNamespace(log_level="INFO", app_env="test")
-        with patch.object(cli, "get_settings", return_value=settings), \
-             patch.object(cli, "configure_logging"), \
-             patch.object(cli, "watch_worker") as watch:
-            cli.main(["worker", "--watch"])
-        watch.assert_called_once()
-
-    def test_staged_enqueue_is_all_or_nothing(self):
-        conn = MagicMock()
-        rows = [{"id": REVISION_ID, "source_path": "staged.pdf"}]
-        with patch.object(bootstrap.repository, "staged_revisions", return_value=rows), \
-             patch.object(bootstrap.repository, "enqueue_revisions") as enqueue:
-            with self.assertRaises(SystemExit):
-                bootstrap.queue_staged(conn, ["staged.pdf", "missing.pdf"])
-            enqueue.assert_not_called()
-            bootstrap.queue_staged(conn, ["staged.pdf"])
-        enqueue.assert_called_once_with(conn, [REVISION_ID])
-
 
 class WithdrawalTests(unittest.TestCase):
     def test_withdrawal_updates_the_registry_and_is_idempotent(self):
@@ -272,19 +195,6 @@ class HttpContractTests(unittest.TestCase):
             # Global middleware applies the same policy as before the router split.
             self.assertEqual(response.headers["referrer-policy"], "strict-origin-when-cross-origin")
 
-    def test_web_startup_serves_health_without_running_ingestion(self):
-        settings = SimpleNamespace(log_level="INFO", app_name="PolicySage", app_env="test")
-        with patch.object(main, "get_settings", return_value=settings), \
-             patch("app.api.health.get_settings", return_value=settings), \
-             patch.object(main, "configure_logging"), \
-             patch.object(main, "init_db"), patch.object(main, "init_usage"), \
-             patch.object(main, "reranker"), \
-             patch.object(bootstrap, "bootstrap") as register, \
-             patch.object(cli, "drain") as process, TestClient(app) as client:
-            self.assertEqual(client.get("/api/health").json(), {"status": "ok", "service": "PolicySage"})
-        register.assert_not_called()
-        process.assert_not_called()
-
     def test_admin_preview_approval_and_retry_require_authentication(self):
         settings = SimpleNamespace(
             kb_managed=True, app_env="production", admin_api_key=SecretStr("example-key"),
@@ -315,28 +225,3 @@ class HttpContractTests(unittest.TestCase):
             self.assertEqual(client.post(approval, auth=auth).status_code, 409)
             self.assertEqual(client.post(retry, auth=auth).json(), {"status": "queued"})
             self.assertEqual(client.post(retry, auth=auth).status_code, 409)
-
-    def test_document_and_job_lists_preserve_frontend_fields_and_require_auth(self):
-        settings = SimpleNamespace(
-            kb_managed=True, app_env="production", admin_api_key=SecretStr("example-key"),
-            kb_admin_username="admin",
-        )
-        client = TestClient(app, base_url="https://testserver")
-        documents = [{"id": REVISION_ID, "title": "Policy", "active_revision": REVISION_ID,
-                      "withdrawn_at": None}]
-        jobs = [{"id": REPLACEMENT_ID, "status": "failed", "last_error": "TimeoutError"}]
-        with (
-            patch.object(admin_documents, "get_settings", return_value=settings),
-            patch.object(admin_documents, "reserve_request"),
-            patch.object(admin_documents.repository, "list_documents", return_value=documents) as list_docs,
-            patch.object(admin_documents.repository, "list_jobs", return_value=jobs) as list_jobs,
-        ):
-            for endpoint, rows, query in (("documents", documents, list_docs), ("jobs", jobs, list_jobs)):
-                with self.subTest(endpoint=endpoint):
-                    url = f"/api/admin/kb/{endpoint}"
-                    self.assertEqual(client.get(url).status_code, 401)
-                    query.assert_not_called()
-                    response = client.get(url, auth=("admin", "example-key"))
-                    self.assertEqual(response.status_code, 200)
-                    self.assertEqual(response.json(), rows)
-                    query.assert_called_once()

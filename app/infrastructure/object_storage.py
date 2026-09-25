@@ -43,10 +43,6 @@ def download_pdf(key, limit):
     return content
 
 
-def delete_pdf(key):
-    object_store().delete_object(Bucket=get_settings().kb_s3_bucket, Key=key)
-
-
 def signed_pdf_url(object_key):
     return object_store().generate_presigned_url(
         "get_object", Params={"Bucket": get_settings().kb_s3_bucket, "Key": object_key}, ExpiresIn=60,

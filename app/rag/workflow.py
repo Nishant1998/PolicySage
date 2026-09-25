@@ -457,7 +457,8 @@ def generate_answer(state: AgentState, documents: list[Document]):
     trace_details(generation_evidence=evidence_refs(documents), evidence_count=len(documents),
                   omitted_evidence_count=original_count - len(documents))
     available = {doc.metadata["evidence_id"]: doc.metadata for doc in documents}
-    cited = set(result.citation_ids)
+    citation_ids = list(dict.fromkeys(result.citation_ids))
+    cited = set(citation_ids)
     # Accept grouped references and add missing markers from validated source IDs.
     answer = re.sub(
         r"\[([KW]\d+(?:\s*[,;]\s*[KW]\d+)+)\]",
@@ -477,11 +478,11 @@ def generate_answer(state: AgentState, documents: list[Document]):
         )
         if not cited or not cited <= available.keys() or not inline_ids <= cited:
             raise ValueError("Invalid answer citations")
-    missing_ids = [item for item in dict.fromkeys(result.citation_ids) if item not in inline_ids]
+    missing_ids = [item for item in citation_ids if item not in inline_ids]
     if missing_ids:
         answer += "\n\nSources: " + " ".join(f"[{item}]" for item in missing_ids)
     citations = []
-    for evidence_id in dict.fromkeys(result.citation_ids):
+    for evidence_id in citation_ids:
         metadata = available[evidence_id]
         citations.append(
             {

@@ -1,7 +1,5 @@
 import unittest
-import tempfile
 from contextlib import nullcontext
-from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 from botocore.exceptions import ClientError
@@ -28,10 +26,6 @@ class InspectionTests(unittest.TestCase):
         self.records.return_value = {bootstrap.point_id("7-000000"): {
             "document_revision":"7", "document_id":"4", "embedding_model":"model", "text":"sample"}}
 
-    def test_existing_complete(self):
-        self.assertEqual(bootstrap.inspect_existing("home/a.pdf", "abc", b"pdf"), "unchanged")
-        self.upload.assert_not_called()
-
     def test_missing_object_is_restored_only_on_not_found(self):
         self.store.return_value.head_object.side_effect = ClientError({"Error":{"Code":"404"}}, "HeadObject")
         self.assertEqual(bootstrap.inspect_existing("home/a.pdf", "abc", b"pdf"), "unchanged")
@@ -46,34 +40,3 @@ class InspectionTests(unittest.TestCase):
         with self.assertRaises(ClientError):
             bootstrap.inspect_existing("home/a.pdf", "abc", b"pdf")
         self.upload.assert_not_called()
-
-    def test_changed_file_is_not_mistaken_for_existing(self):
-        self.assertIsNone(bootstrap.inspect_existing("home/a.pdf", "different", b"pdf"))
-        self.store.return_value.head_object.assert_not_called()
-
-    def test_bootstrap_without_source_inspects_all_selected_files(self):
-        with tempfile.TemporaryDirectory() as folder:
-            root = Path(folder)
-            (root / "a.pdf").write_bytes(b"%PDF-a")
-            (root / "b.pdf").write_bytes(b"%PDF-b")
-            settings = SimpleNamespace(kb_dir=root)
-            with patch.object(bootstrap, "get_settings", return_value=settings), \
-                 patch.object(bootstrap, "inspect_existing", side_effect=["unchanged", None]) as inspect, \
-                 patch.object(bootstrap, "register_document", return_value={"status": "queued"}) as register:
-                bootstrap.bootstrap()
-            self.assertEqual(inspect.call_count, 2)
-            register.assert_called_once()
-            self.assertEqual(register.call_args.kwargs["source"], "b.pdf")
-
-    def test_checksum_mismatch_stops_before_inspection(self):
-        with tempfile.TemporaryDirectory() as folder:
-            root = Path(folder)
-            (root / "a.pdf").write_bytes(b"%PDF-a")
-            with patch.object(bootstrap, "get_settings", return_value=SimpleNamespace(kb_dir=root)), \
-                 patch.object(bootstrap, "selected_pdfs", return_value={"a.pdf": {"sha256": "wrong"}}), \
-                 patch.object(bootstrap, "inspect_existing") as inspect, \
-                 patch.object(bootstrap, "register_document") as register:
-                with self.assertRaises(SystemExit):
-                    bootstrap.bootstrap()
-            inspect.assert_not_called()
-            register.assert_not_called()

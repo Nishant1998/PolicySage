@@ -25,8 +25,8 @@ const btnSecondary = "inline-flex items-center gap-2 rounded-lg border border-sl
 const Links = ({ prefix }) => (
   <div className="flex flex-wrap items-center gap-2">
     <Link to="/" data-testid={`${prefix}-live-demo-button`} className={btnPrimary}>Live Demo <ArrowRight size={15} aria-hidden="true" /></Link>
-    <a href={LINKS.github} data-testid={`${prefix}-github-link`} className={btnSecondary}><Github size={15} aria-hidden="true" /> GitHub</a>
-    <a href={LINKS.portfolio} data-testid={`${prefix}-portfolio-link`} className="inline-flex items-center gap-1.5 px-2 text-sm font-medium text-slate-700 underline-offset-4 hover:text-slate-900 hover:underline"><Globe size={15} aria-hidden="true" /> Portfolio</a>
+    {LINKS.github && <a href={LINKS.github} data-testid={`${prefix}-github-link`} className={btnSecondary}><Github size={15} aria-hidden="true" /> GitHub</a>}
+    {LINKS.portfolio && <a href={LINKS.portfolio} data-testid={`${prefix}-portfolio-link`} className="inline-flex items-center gap-1.5 px-2 text-sm font-medium text-slate-700 underline-offset-4 hover:text-slate-900 hover:underline"><Globe size={15} aria-hidden="true" /> Portfolio</a>}
   </div>
 );
 
@@ -83,7 +83,7 @@ export default function AboutPage() {
           </div>
         </section>
 
-        <section className="mt-14" data-testid="about-evaluation">
+        <section className="mt-14" data-testid="about-limitations">
           <H2>Limitations</H2>
           <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
             <p className="text-sm leading-relaxed text-slate-600">Answers depend on the available insurance documents and selected official sources. Information may be incomplete or incorrect, so users should verify important details against the applicable original policy.</p>
@@ -91,7 +91,7 @@ export default function AboutPage() {
         </section>
 
         <section className="mt-14 rounded-2xl border border-slate-200 bg-slate-50 p-5 sm:p-6">
-          <p className="font-display text-base font-semibold text-slate-900">Try the live demo, or explore the code on GitHub.</p>
+          <p className="font-display text-base font-semibold text-slate-900">Try the live demo{LINKS.github && ", or explore the code on GitHub"}.</p>
           <div className="mt-4"><Links prefix="about-bottom" /></div>
         </section>
       </main>

@@ -1,4 +1,4 @@
-FROM node:22-slim AS frontend-build
+FROM node:22-bookworm-slim AS frontend-build
 WORKDIR /frontend
 RUN corepack enable
 COPY frontend/package.json frontend/yarn.lock ./
@@ -6,25 +6,40 @@ RUN yarn install --frozen-lockfile --network-timeout 600000
 COPY frontend ./
 RUN yarn build
 
-FROM python:3.11-slim
-COPY --from=ghcr.io/astral-sh/uv:0.13.5 /uv /uvx /usr/local/bin/
+FROM python:3.11-slim-bookworm
+COPY --from=ghcr.io/astral-sh/uv:0.13.5 /uv /usr/local/bin/uv
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
-ENV PORT=8080
-ENV PATH="/app/.venv/bin:$PATH"
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    UV_PYTHON_DOWNLOADS=never \
+    OMP_NUM_THREADS=1 \
+    MKL_NUM_THREADS=1 \
+    PATH="/app/.venv/bin:$PATH"
 
 COPY pyproject.toml uv.lock ./
 RUN uv sync --locked --no-dev --no-install-project --no-cache
 
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends supervisor \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY app ./app
+COPY supervisord.conf /app/supervisord.conf
 COPY --from=frontend-build /frontend/build ./frontend/build
 
-RUN useradd --create-home appuser && mkdir -p /app/data && chown -R appuser:appuser /app
+RUN useradd --uid 10001 --create-home appuser \
+    && install -d -o appuser -g appuser /app/data
+ENV HOME=/home/appuser PORT=8080
 USER appuser
 
 EXPOSE 8080
+HEALTHCHECK --interval=30s --timeout=5s --start-period=120s \
+    CMD ["python", "-c", "import os, urllib.request; urllib.request.urlopen('http://127.0.0.1:' + (os.getenv('PORT') or '8080') + '/api/health', timeout=3).close()"]
 
-CMD ["sh", "-c", "exec uvicorn app.main:app --no-access-log --host 0.0.0.0 --port ${PORT:-8080} --workers 1"]
+CMD ["supervisord", "-n", "-c", "/app/supervisord.conf"]

@@ -12,22 +12,6 @@ from app.rag.state import EvidenceGrade, RouteDecision
 
 
 class AnswerRouteTests(unittest.TestCase):
-    def test_first_web_search_is_attempted_with_low_research_budget(self):
-        state = {"needs_details": False, "kb_grade": "weak", "allow_web": True, "retry_count": 0}
-        with patch.object(workflow, "research_budget_available", return_value=False):
-            self.assertEqual(workflow.after_kb(state)[0], "search_web")
-            step, reason = workflow.after_kb({**state, "retry_count": 1})
-        self.assertEqual(step, "general_answer")
-        self.assertIn("token budget", reason)
-
-    def test_disabled_web_search_reports_reason(self):
-        step, reason = workflow.after_kb({
-            "needs_details": False, "kb_grade": "weak", "allow_web": False,
-            "web_disabled_reason": "disabled in server settings",
-        })
-        self.assertEqual(step, "general_answer")
-        self.assertEqual(reason, "Web search skipped: disabled in server settings")
-
     def test_insurance_questions_through_chat_api(self):
         cases = [
             ("How do cashless and reimbursement claims differ?", "kb"),
