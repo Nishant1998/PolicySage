@@ -61,9 +61,7 @@ class Settings(BaseSettings):
     chunk_min_tokens: int = Field(default=200, ge=1, le=450)
     chunk_max_tokens: int = Field(default=650, ge=128, le=800)
 
-    audit_db_path: Path = BASE_DIR / "data" / "audit.db"
     kb_dir: Path = BASE_DIR / "data" / "kb"
-    usage_db_path: Path = BASE_DIR / "data" / "usage.db"
     semantic_cache_path: Path = BASE_DIR / "data" / "semantic_cache.db"
     kb_managed: bool = True
     kb_database_url: SecretStr = SecretStr("")

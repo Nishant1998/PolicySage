@@ -21,6 +21,18 @@ SIGNAL_CHECK_SECONDS = 2
 ERROR_RETRY_SECONDS = 60
 
 
+def process_queued_jobs():
+    """Recover interrupted work and process the queue under the worker lock."""
+    with connect(autocommit=True) as conn:
+        if not repository.try_worker_lock(conn, WORKER_LOCK):
+            logger.info("Another worker is processing jobs")
+            return
+        repository.recover_interrupted_jobs(conn)
+        failures = drain(conn, watch=False)
+        if failures:
+            logger.warning("Processing finished with %s failed jobs", failures)
+
+
 def drain(conn, watch):
     failures = 0
     with tqdm(desc="Processing PDF revisions", unit="revision", disable=None) as progress:

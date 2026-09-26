@@ -2,6 +2,17 @@ import React from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
+function opensNewTab(href) {
+  if (!href || href.startsWith("#")) return false;
+  try {
+    const url = new URL(href, window.location.origin);
+    return ["http:", "https:"].includes(url.protocol) &&
+      (url.origin !== window.location.origin || /\.pdf$/i.test(url.pathname));
+  } catch {
+    return false;
+  }
+}
+
 function citationPlugin(ids) {
   const allowed = new Set(ids);
   function visit(node) {
@@ -40,7 +51,10 @@ export const AnswerText = ({ text, ids, activeId, onCite, msgIndex }) => (
       td: ({ node, ...props }) => <td className="border-b border-slate-100 px-3 py-2 align-top" {...props} />,
       a: ({ node, href, children, ...props }) => {
         const id = href?.match(/^#citation-([A-Za-z]?\d+)$/)?.[1];
-        if (!id || !ids.includes(id)) return <a href={href} {...props}>{children}</a>;
+        if (!id || !ids.includes(id)) {
+          const newTab = opensNewTab(href);
+          return <a href={href} {...props} target={newTab ? "_blank" : undefined} rel={newTab ? "noopener noreferrer" : undefined}>{children}</a>;
+        }
         return (
           <button type="button" onClick={() => onCite(id)} data-testid={`citation-marker-${msgIndex}-${id}`}
             aria-label={`Show source ${id}`}

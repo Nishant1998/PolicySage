@@ -16,6 +16,7 @@
 !pyproject.toml
 !uv.lock
 !Dockerfile
+!Dockerfile.modal
 !supervisord.conf
 **/__pycache__/
 **/*.py[cod]

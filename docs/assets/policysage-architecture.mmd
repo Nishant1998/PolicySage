@@ -1,6 +1,6 @@
 flowchart TB
   browser["React UI<br/>Chat · source viewer · admin"]
-  subgraph container["Single Docker container · Supervisor"]
+  subgraph container["Application components · Docker: one container · Modal: separate functions"]
     api["FastAPI + built React files<br/>Streamed events · request admission"]
     cache["Answer cache<br/>Context + revision fingerprint checks"]
     subgraph graph["LangGraph · adaptive research"]
@@ -30,7 +30,7 @@ flowchart TB
       publish["Verify records · review when required<br/>Atomically activate eligible revision"]
       claim --> parse --> index --> publish
     end
-    controls["Request / concurrency limits · token budgets · provider timeouts<br/>SQLite quotas + audit · structured logs · optional LangSmith"]
+    controls["Request / concurrency limits · token budgets · provider timeouts<br/>PostgreSQL quotas + audit · structured logs · optional LangSmith"]
     api --> cache
     cache -->|miss| route
     api -->|authorized upload| register

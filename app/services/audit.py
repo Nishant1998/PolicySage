@@ -1,37 +1,26 @@
 import json
-import sqlite3
-from hashlib import sha256
-from contextlib import closing
 from datetime import datetime, timezone
+from hashlib import sha256
 
-from app.core.config import get_settings
+from app.db.connection import connect
 
 
 def init_db() -> None:
-    path = get_settings().audit_db_path
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with closing(sqlite3.connect(path)) as con:
-        con.execute(
-            """CREATE TABLE IF NOT EXISTS query_audit (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                created_at TEXT NOT NULL,
-                question TEXT NOT NULL,
-                source_used TEXT NOT NULL,
-                trace_json TEXT NOT NULL
-            )"""
-        )
-        con.commit()
+    with connect() as conn:
+        conn.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", ("policysage:audit-schema",))
+        conn.execute("""CREATE TABLE IF NOT EXISTS policysage_query_audit (
+            id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+            created_at timestamptz NOT NULL,
+            question_hash text NOT NULL,
+            source_used text NOT NULL,
+            trace_json jsonb NOT NULL
+        )""")
 
 
 def write_audit(question: str, source_used: str, trace: list[str]) -> None:
-    with closing(sqlite3.connect(get_settings().audit_db_path)) as con:
-        con.execute(
-            "INSERT INTO query_audit(created_at, question, source_used, trace_json) VALUES (?, ?, ?, ?)",
-            (
-                datetime.now(timezone.utc).isoformat(),
-                "sha256:" + sha256(question.encode()).hexdigest(),
-                source_used,
-                json.dumps(trace, ensure_ascii=False),
-            ),
+    with connect() as conn:
+        conn.execute(
+            "INSERT INTO policysage_query_audit(created_at, question_hash, source_used, trace_json) VALUES (%s, %s, %s, %s::jsonb)",
+            (datetime.now(timezone.utc), "sha256:" + sha256(question.encode()).hexdigest(),
+             source_used, json.dumps(trace, ensure_ascii=False)),
         )
-        con.commit()

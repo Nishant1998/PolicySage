@@ -1,8 +1,6 @@
 import asyncio
 import json
-import tempfile
 import unittest
-from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 from io import BytesIO
@@ -32,22 +30,43 @@ class PublicDemoTests(unittest.TestCase):
             self.assertNotIn("me%40example.com", sent)
 
     def test_forged_forwarded_header_does_not_create_a_new_rate_bucket(self):
-        with tempfile.TemporaryDirectory() as folder:
-            config = SimpleNamespace(usage_db_path=Path(folder) / "usage.db",
-                                     chat_requests_per_minute=1, daily_chat_limit=100, monthly_chat_limit=300)
-            with patch.object(limits, "get_settings", return_value=config), \
-                 patch.object(limits, "time", return_value=120):
-                limits.init_usage()
-                for header in ("attacker-1", "attacker-2"):
-                    request = SimpleNamespace(client=SimpleNamespace(host="same-peer"),
-                                              headers={"x-forwarded-for": header})
-                    if header == "attacker-1":
+        class Connection:
+            def __init__(self):
+                self.counts = {}
+                self.row = None
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                pass
+
+            def execute(self, query, params):
+                if query.startswith("SELECT count"):
+                    count = self.counts.get(params[0])
+                    self.row = {"count": count} if count is not None else None
+                elif query.startswith("INSERT INTO policysage_usage"):
+                    self.counts[params[0]] = self.counts.get(params[0], 0) + 1
+                return self
+
+            def fetchone(self):
+                return self.row
+
+        connection = Connection()
+        config = SimpleNamespace(chat_requests_per_minute=1, daily_chat_limit=100, monthly_chat_limit=300)
+        with patch.object(limits, "connect", return_value=connection), \
+             patch.object(limits, "get_settings", return_value=config), \
+             patch.object(limits, "time", return_value=120):
+            for header in ("attacker-1", "attacker-2"):
+                request = SimpleNamespace(client=SimpleNamespace(host="same-peer"),
+                                          headers={"x-forwarded-for": header})
+                if header == "attacker-1":
+                    limits.reserve_request(request, "chat")
+                else:
+                    with self.assertRaises(HTTPException) as caught:
                         limits.reserve_request(request, "chat")
-                    else:
-                        with self.assertRaises(HTTPException) as caught:
-                            limits.reserve_request(request, "chat")
-                        self.assertEqual(caught.exception.status_code, 429)
-                        self.assertIn("Retry-After", caught.exception.headers)
+                    self.assertEqual(caught.exception.status_code, 429)
+                    self.assertIn("Retry-After", caught.exception.headers)
 
     def test_received_bytes_are_limited_even_if_declared_size_is_false(self):
         async def run():

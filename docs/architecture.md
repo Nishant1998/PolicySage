@@ -4,7 +4,9 @@ See the [full system diagram](assets/policysage-architecture-hero.png) or its [e
 
 PolicySage separates interactive question answering from PDF processing. FastAPI serves the React interface and chat and admin APIs. A separate worker processes registered revisions. PostgreSQL decides which revisions are eligible for retrieval, Qdrant searches their passages, and S3-compatible storage holds the original PDFs.
 
-The Docker container starts the same-origin React frontend and FastAPI alongside the ingestion worker as supervised processes. Both connect to the same PostgreSQL, Qdrant, and object storage. The web process also uses local SQLite for request quotas and auditing, so public deployment requires durable storage for those files. [Deployment setup](setup.md#deploy-on-render)
+The Docker container starts the same-origin React frontend and FastAPI alongside the ingestion worker as supervised processes. Both connect to the same PostgreSQL, Qdrant, and object storage. PostgreSQL also stores request quotas and audit records, and advisory locks coordinate concurrent requests. [Docker setup](setup.md#docker)
+
+The live Modal deployment uses an ASGI web function and a separate scheduled ingestion function built from the same image. The ingestion function checks the queue every five minutes and drains available jobs under the PostgreSQL worker lock. The web function can scale down while ingestion continues. Modal can also interrupt a running function, so interrupted jobs rely on the worker's recovery path. [Modal setup](setup.md#deploy-on-modal)
 
 ```mermaid
 flowchart LR

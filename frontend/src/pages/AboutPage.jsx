@@ -25,8 +25,8 @@ const btnSecondary = "inline-flex items-center gap-2 rounded-lg border border-sl
 const Links = ({ prefix }) => (
   <div className="flex flex-wrap items-center gap-2">
     <Link to="/" data-testid={`${prefix}-live-demo-button`} className={btnPrimary}>Live Demo <ArrowRight size={15} aria-hidden="true" /></Link>
-    {LINKS.github && <a href={LINKS.github} data-testid={`${prefix}-github-link`} className={btnSecondary}><Github size={15} aria-hidden="true" /> GitHub</a>}
-    {LINKS.portfolio && <a href={LINKS.portfolio} data-testid={`${prefix}-portfolio-link`} className="inline-flex items-center gap-1.5 px-2 text-sm font-medium text-slate-700 underline-offset-4 hover:text-slate-900 hover:underline"><Globe size={15} aria-hidden="true" /> Portfolio</a>}
+    {LINKS.github && <a href={LINKS.github} target="_blank" rel="noopener noreferrer" data-testid={`${prefix}-github-link`} className={btnSecondary}><Github size={15} aria-hidden="true" /> GitHub</a>}
+    {LINKS.portfolio && <a href={LINKS.portfolio} target="_blank" rel="noopener noreferrer" data-testid={`${prefix}-portfolio-link`} className="inline-flex items-center gap-1.5 px-2 text-sm font-medium text-slate-700 underline-offset-4 hover:text-slate-900 hover:underline"><Globe size={15} aria-hidden="true" /> Portfolio</a>}
   </div>
 );
 

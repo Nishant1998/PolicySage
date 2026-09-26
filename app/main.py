@@ -21,11 +21,12 @@ from app.rag.retrieval import reranker
 async def lifespan(app: FastAPI):
     settings = get_settings()
     configure_logging(settings.log_level, structured=settings.app_env == "production")
-    try:
-        init_db()
-    except Exception:
-        logging.getLogger(__name__).exception("Audit storage unavailable")
-    init_usage()
+    if settings.kb_managed:
+        try:
+            init_db()
+        except Exception:
+            logging.getLogger(__name__).exception("Audit storage unavailable")
+        init_usage()
     await to_thread(reranker)
     logging.getLogger(__name__).info("Application started")
     try:

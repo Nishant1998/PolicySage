@@ -12,6 +12,6 @@ export const ENDPOINTS = {
 };
 
 export const LINKS = {
-  github: "",
-  portfolio: "",
+  github: "https://github.com/Nishant1998/PolicySage",
+  portfolio: "https://nishantvalvi.me",
 };
