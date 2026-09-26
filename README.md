@@ -4,6 +4,8 @@ Insurance policy documents can be lengthy and difficult to search, especially wh
 
 The LangGraph workflow adapts to the question and the evidence it finds. It can search published policy documents, assess whether they answer the question, consult selected official websites when permitted, or explain what information is missing.
 
+[![PolicySage system architecture showing the question workflow, PDF ingestion, storage, and Docker deployment](docs/assets/policysage-architecture-hero.png)](docs/assets/policysage-architecture-hero.png)
+
 ## What you can do
 
 - **Ask a question in plain English.** The assistant can use recent conversation context to resolve follow-ups and split a complex research question into smaller searches.
@@ -15,22 +17,6 @@ The LangGraph workflow adapts to the question and the evidence it finds. It can 
 Try a question such as “How do cashless and reimbursement claims differ?” after publishing relevant policy documents. The excerpts let you check the conditions behind an answer, including whether it describes a particular insurer or policy version.
 
 ## How it works
-
-```mermaid
-flowchart LR
-    PDF["Upload or register PDF"] --> Registry[("PostgreSQL: revisions and publication")]
-    PDF --> Originals[("Object storage: original PDFs")]
-    Registry --> Worker["Background ingestion worker"]
-    Originals --> Worker
-    Worker --> Index[("Qdrant: indexed passages")]
-    User["Question"] --> API["FastAPI"]
-    API --> Graph["LangGraph: route and assess"]
-    Registry -. "eligible revisions" .-> Graph
-    Index --> Graph
-    Graph -. "if evidence is weak and web is permitted" .-> Web["Official-source research and bounded retries"]
-    Web --> Graph
-    Graph --> Answer["Answer with sources, clarification or limitations"]
-```
 
 Three design decisions shape the project:
 
@@ -45,7 +31,7 @@ Three design decisions shape the project:
 | Frontend and API | React, Tailwind CSS, FastAPI, and streamed chat events |
 | Workflow and models | LangGraph, OpenAI chat models and embeddings |
 | Retrieval | Qdrant dense and BM25 search, reciprocal rank fusion, and a MiniLM cross-encoder |
-| Document processing | Docling, PyMuPDF, and semantic chunking |
+| Document processing | Docling and semantic chunking |
 | Storage | PostgreSQL for the revision registry, Qdrant for searchable passages, and S3-compatible storage for original PDFs |
 | External research and tracing | Tavily or Brave for optional web research, structured application logs, and optional LangSmith traces |
 

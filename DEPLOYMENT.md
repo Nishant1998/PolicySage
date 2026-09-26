@@ -2,6 +2,8 @@
 
 See the [setup guide](docs/setup.md#deploy-on-render) for the Docker commands, Render settings and resource checks.
 
+The [system diagram](docs/assets/policysage-architecture-hero.png) shows how the web server and ingestion worker share one container. When validating a new image, upload a test policy PDF and confirm the Docling conversion completes, the revision is published, and a cited answer points to the correct page. The worker may download Docling model assets on its first conversion.
+
 ## Public-demo protection
 
 Deploy with `APP_ENV=production`, one application instance, one web worker, and a persistent volume for `USAGE_DB_PATH`. Anonymous production chat requires `KB_MANAGED=true`. Configure the PostgreSQL registry and verify the existing Qdrant collection before enabling chat. Hybrid search uses the registry to determine which revisions are published. Set `PUBLIC_CHAT_ENABLED=false` and restart to pause public chat.

@@ -1,0 +1,67 @@
+flowchart TB
+  browser["React UI<br/>Chat · source viewer · admin"]
+  subgraph container["Single Docker container · Supervisor"]
+    api["FastAPI + built React files<br/>Streamed events · request admission"]
+    cache["Answer cache<br/>Context + revision fingerprint checks"]
+    subgraph graph["LangGraph · adaptive research"]
+      route{"Route question<br/>Resolve conversation context"}
+      decompose["Decompose if needed"]
+      retrieve["Hybrid retrieval<br/>Dense + BM25 → RRF → MiniLM reranking"]
+      kbgrade{"Grade KB evidence"}
+      web["Optional official-source research<br/>Tavily or Brave"]
+      webgrade{"Grade web + retained KB evidence"}
+      rewrite["Rewrite query<br/>Bounded retry"]
+      generate["Generate from supporting evidence<br/>Validate citation IDs"]
+      general["Direct reply / clarification /<br/>insufficient-evidence response"]
+      route -->|policy research| decompose --> retrieve --> kbgrade
+      route -->|direct / needs details| general
+      kbgrade -->|sufficient| generate
+      kbgrade -->|weak + web allowed| web --> webgrade
+      kbgrade -->|needs details / research unavailable| general
+      webgrade -->|sufficient| generate
+      webgrade -->|retry allowed| rewrite --> retrieve
+      webgrade -->|needs details / limits reached| general
+    end
+    register["Register PDF revision"]
+    subgraph ingestion["Background ingestion worker"]
+      claim["Claim queued revision<br/>Verify PDF checksum"]
+      parse["Docling<br/>Chunk with page references"]
+      index["Embed passages<br/>Write Qdrant records"]
+      publish["Verify records · review when required<br/>Atomically activate eligible revision"]
+      claim --> parse --> index --> publish
+    end
+    controls["Request / concurrency limits · token budgets · provider timeouts<br/>SQLite quotas + audit · structured logs · optional LangSmith"]
+    api --> cache
+    cache -->|miss| route
+    api -->|authorized upload| register
+  end
+  answer["Answer + references where available<br/>Excerpts · pages · limitations"]
+  pg[("PostgreSQL<br/>Revision registry · jobs · publication eligibility")]
+  qdrant[("Qdrant<br/>Passages · dense vectors · BM25 text index")]
+  objects[("S3-compatible object storage<br/>Original PDFs")]
+  models["OpenAI<br/>Chat models + embeddings"]
+  browser --> api
+  generate --> answer
+  general --> answer
+  cache -->|eligible hit| answer
+  answer -->|streamed through API| browser
+  register --> pg
+  register --> objects
+  pg -->|queued jobs| claim
+  objects -->|original PDF| claim
+  index --> qdrant
+  publish -->|activate revision| pg
+  publish -.->|verify records| qdrant
+  pg -.->|eligible revision snapshot| retrieve
+  qdrant -.->|filtered passage search| retrieve
+  models -.-> graph
+  models -.->|embeddings| index
+  controls -.-> api
+  classDef blue fill:#eef5ff,stroke:#3974df,color:#142a48;
+  classDef green fill:#edf9f5,stroke:#27977d,color:#133b33;
+  classDef amber fill:#fff8e9,stroke:#d3a137,color:#594115;
+  classDef violet fill:#f4efff,stroke:#8a67c7,color:#392657;
+  class browser,api,cache,retrieve,decompose blue;
+  class generate,answer,claim,parse,index,publish green;
+  class route,kbgrade,webgrade amber;
+  class web,rewrite,general violet;

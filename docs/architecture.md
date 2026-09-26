@@ -1,5 +1,7 @@
 # PolicySage architecture
 
+See the [full system diagram](assets/policysage-architecture-hero.png) or its [editable Mermaid version](assets/policysage-architecture.mmd).
+
 PolicySage separates interactive question answering from PDF processing. FastAPI serves the React interface and chat and admin APIs. A separate worker processes registered revisions. PostgreSQL decides which revisions are eligible for retrieval, Qdrant searches their passages, and S3-compatible storage holds the original PDFs.
 
 The Docker container starts the same-origin React frontend and FastAPI alongside the ingestion worker as supervised processes. Both connect to the same PostgreSQL, Qdrant, and object storage. The web process also uses local SQLite for request quotas and auditing, so public deployment requires durable storage for those files. [Deployment setup](setup.md#deploy-on-render)
@@ -72,7 +74,7 @@ Qualifying answers with citations can be reused from an in-memory cache. Reuse c
 ## Document ingestion and lifecycle
 
 1. Admin uploads and local bootstrap share registration logic. Registration records a pending upload in PostgreSQL, writes the original to object storage, then marks the revision staged or queued. Failed uploads require registration to be retried.
-2. The worker claims queued work, verifies the stored PDF checksum, parses pages with Docling and PyMuPDF, and chunks the text while keeping page references. It embeds passages and writes Qdrant records. Stable IDs and matching payload checks let retries reuse completed work.
+2. The worker claims queued work, verifies the stored PDF checksum, and uses Docling for PDF conversion. It accepts up to 400 pages and requires a complete conversion with readable text. Pages with no extracted text are skipped while the remaining pages keep their original numbers for citations. The worker chunks and embeds the text, then writes Qdrant records. Stable IDs and matching payload checks let retries reuse completed work.
 3. The worker verifies the expected records before publication. A review-required revision waits for approval. Once publishable, the worker checks the vectors and retires the old active revision and activates the replacement in one PostgreSQL transaction.
 4. Withdrawal makes the document ineligible for new retrieval snapshots and disables new stored-PDF links. Old vectors remain during a six-minute cleanup grace period for in-flight requests. The worker later removes them. Original PDFs and revision history are retained.
 

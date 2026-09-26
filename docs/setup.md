@@ -74,7 +74,7 @@ Open `http://127.0.0.1:8000/` for chat, `/about` for the project overview, or `/
 
 | Action | Expected result |
 | --- | --- |
-| Upload PDF | Registers and queues a readable, unencrypted PDF. The upload limit is 20 MB and the parser accepts up to 400 pages. |
+| Upload PDF | Registers and queues a PDF up to 20 MB. The worker uses Docling to convert readable, unlocked PDFs of up to 400 pages. |
 | Replace PDF | Keeps the document identity and creates a revision. The old active revision stays searchable until the replacement is published. |
 | Require review | The worker indexes the revision and waits for approval. Preview it in the admin UI, approve it, then let the worker complete publication. |
 | Retry | Retry a failed processing job from the admin activity list. Register the PDF again if the original upload failed. |
